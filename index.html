@@ -362,7 +362,10 @@
       <h1>frequency-locked bounce</h1>
       <p class="subtitle" id="subtitleText"></p>
     </div>
-    <button class="theme-toggle" id="themeToggle" type="button">theme: auto</button>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="theme-toggle" id="copyLinkBtn" type="button">Copy link</button>
+      <button class="theme-toggle" id="themeToggle" type="button">theme: auto</button>
+    </div>
   </header>
 
   <div class="layout">
@@ -556,6 +559,76 @@
     alignmentFound: false,
     alignmentApprox: false
   };
+
+  // ---------- Shareable link: load state from URL (if any) ----------
+  function deriveOffsetPresetId(offsets, stepsPerOctave) {
+    var sorted = offsets.slice().sort(function (a, b) { return a - b; }).join(",");
+    for (var i = 0; i < PRESETS.length; i++) {
+      var p = PRESETS[i];
+      if (p.id === "custom") continue;
+      var scale = p.unit === "quartertone" ? 1 : stepsPerOctave / 12;
+      var scaled = p.offsets.map(function (o) { return o * scale; })
+        .sort(function (a, b) { return a - b; }).join(",");
+      if (scaled === sorted) return p.id;
+    }
+    return "custom";
+  }
+
+  function deriveHarmonicPresetId(harmonics) {
+    var sorted = harmonics.slice().sort(function (a, b) { return a - b; }).join(",");
+    for (var i = 0; i < HARMONIC_PRESETS.length; i++) {
+      var p = HARMONIC_PRESETS[i];
+      if (p.id === "hcustom") continue;
+      if (p.harmonics.slice().sort(function (a, b) { return a - b; }).join(",") === sorted) return p.id;
+    }
+    return "hcustom";
+  }
+
+  function loadStateFromURL() {
+    var params = new URLSearchParams(window.location.search);
+    if (!params.has("t") && !params.has("n")) return;
+
+    var t = params.get("t");
+    if (["et", "ji", "harmonic", "bp"].indexOf(t) !== -1) state.tuningSystem = t;
+
+    var r = parseInt(params.get("r"), 10);
+    if (!isNaN(r) && r >= 0 && r <= 11) state.rootNoteIndex = r;
+
+    var o = parseInt(params.get("o"), 10);
+    if (!isNaN(o) && o >= 2 && o <= 6) state.rootOctave = o;
+
+    var s = parseInt(params.get("s"), 10);
+    if (s === 12 || s === 24) state.stepsPerOctave = s;
+
+    var p = parseFloat(params.get("p"));
+    if (!isNaN(p) && p > 0) state.basePeriod = p;
+
+    var validVoices = ["piano", "violin", "bassoon", "steeldrum", "pluck", "sine", "triangle", "square", "sawtooth"];
+    var v = params.get("v");
+    if (v && validVoices.indexOf(v) !== -1) state.voice = v;
+
+    var vol = parseInt(params.get("vol"), 10);
+    if (!isNaN(vol)) state.volume = Math.max(0, Math.min(100, vol)) / 100;
+
+    state.octaveDouble = params.get("d") === "1";
+
+    var n = params.get("n");
+    if (n) {
+      var arr = n.split(",").map(Number).filter(function (x) { return !isNaN(x) && isFinite(x); });
+      if (arr.length) {
+        if (state.tuningSystem === "bp") {
+          state.activeBPOffsets = arr;
+        } else if (state.tuningSystem === "harmonic") {
+          state.activeHarmonics = arr;
+          state.harmonicPresetId = deriveHarmonicPresetId(arr);
+        } else {
+          state.activeOffsets = arr;
+          state.presetId = deriveOffsetPresetId(arr, state.stepsPerOctave);
+        }
+      }
+    }
+  }
+  loadStateFromURL();
 
   var balls = []; // {offset, shift, freq, ratio, period, lastBounceIdx, hue}
 
@@ -972,6 +1045,7 @@
 
   // ---------- UI: quarter-tone toggle ----------
   var quarterToneToggle = document.getElementById("quarterToneToggle");
+  quarterToneToggle.checked = state.stepsPerOctave === 24;
   quarterToneToggle.addEventListener("change", function () {
     var was = state.stepsPerOctave;
     var now = quarterToneToggle.checked ? 24 : 12;
@@ -993,6 +1067,7 @@
 
   // ---------- UI: octave-double toggle ----------
   var octaveToggle = document.getElementById("octaveToggle");
+  octaveToggle.checked = state.octaveDouble;
   octaveToggle.addEventListener("change", function () {
     state.octaveDouble = octaveToggle.checked;
     rebuildBalls();
@@ -1007,7 +1082,7 @@
     opt.textContent = name;
     rootNoteSelect.appendChild(opt);
   });
-  rootNoteSelect.value = "0";
+  rootNoteSelect.value = String(state.rootNoteIndex);
   rootNoteSelect.addEventListener("change", function () {
     state.rootNoteIndex = parseInt(rootNoteSelect.value, 10);
     renderNoteGrid();
@@ -1021,7 +1096,7 @@
     opt.textContent = "Octave " + o;
     rootOctaveSelect.appendChild(opt);
   });
-  rootOctaveSelect.value = "4";
+  rootOctaveSelect.value = String(state.rootOctave);
   rootOctaveSelect.addEventListener("change", function () {
     state.rootOctave = parseInt(rootOctaveSelect.value, 10);
     rebuildBalls();
@@ -1171,6 +1246,7 @@
     state.soundOn = soundToggle.checked;
     if (state.soundOn) unlockAudio();
   });
+  volumeSlider.value = String(Math.round(state.volume * 100));
   volumeSlider.addEventListener("input", function () {
     state.volume = parseInt(volumeSlider.value, 10) / 100;
     if (masterGain) masterGain.gain.value = state.volume * 0.6;
@@ -1503,6 +1579,43 @@
     draw();
     requestAnimationFrame(frame);
   }
+
+  // ---------- shareable link: save current state to URL ----------
+  function serializeState() {
+    var params = new URLSearchParams();
+    params.set("t", state.tuningSystem);
+    params.set("r", state.rootNoteIndex);
+    params.set("o", state.rootOctave);
+    params.set("s", state.stepsPerOctave);
+    params.set("p", state.basePeriod);
+    params.set("v", state.voice);
+    params.set("vol", Math.round(state.volume * 100));
+    params.set("d", state.octaveDouble ? "1" : "0");
+    var offsets = state.tuningSystem === "bp" ? state.activeBPOffsets
+      : state.tuningSystem === "harmonic" ? state.activeHarmonics
+      : state.activeOffsets;
+    params.set("n", offsets.join(","));
+    return params.toString();
+  }
+
+  var copyLinkBtn = document.getElementById("copyLinkBtn");
+  copyLinkBtn.addEventListener("click", function () {
+    var url = window.location.origin + window.location.pathname + "?" + serializeState();
+    function showResult(label) {
+      var original = "Copy link";
+      copyLinkBtn.textContent = label;
+      setTimeout(function () { copyLinkBtn.textContent = original; }, 1600);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(
+        function () { showResult("Copied!"); },
+        function () { window.prompt("Copy this link:", url); showResult("Link ready"); }
+      );
+    } else {
+      window.prompt("Copy this link:", url);
+      showResult("Link ready");
+    }
+  });
 
   // ---------- theme toggle ----------
   var themeToggle = document.getElementById("themeToggle");
