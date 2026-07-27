@@ -510,11 +510,11 @@
   // presets (intervals that don't land on a semitone), which are authored
   // directly in 24-steps-per-octave units and force quarter-tone mode on.
   var PRESETS = [
+    { id: "majpent",    label: "Major pentatonic",             offsets: [0,2,4,7,9] },
+    { id: "minpent",    label: "Minor pentatonic",             offsets: [0,3,5,7,10] },
     { id: "hirajoshi",  label: "Hirajoshi (C D E♭ G A♭)",     offsets: [0,2,3,7,8] },
     { id: "in",         label: "In scale (Japanese)",          offsets: [0,1,5,7,8] },
     { id: "yo",         label: "Yo scale (Japanese)",          offsets: [0,2,5,7,9] },
-    { id: "majpent",    label: "Major pentatonic",             offsets: [0,2,4,7,9] },
-    { id: "minpent",    label: "Minor pentatonic",             offsets: [0,3,5,7,10] },
     { id: "hungarian",  label: "Hungarian minor (Gypsy)",      offsets: [0,2,3,6,7,8,11] },
     { id: "wholetone",  label: "Whole tone",                   offsets: [0,2,4,6,8,10] },
     { id: "chromatic",  label: "Chromatic (all 12)",           offsets: [0,1,2,3,4,5,6,7,8,9,10,11] },
@@ -540,7 +540,7 @@
     rootOctave: 4,
     stepsPerOctave: 12,
     activeOffsets: PRESETS[0].offsets.slice(),
-    presetId: "hirajoshi",
+    presetId: "majpent",
     activeBPOffsets: [0,1,2,3,4,5,6,7,8,9,10,11,12],
     activeHarmonics: HARMONIC_PRESETS[0].harmonics.slice(),
     harmonicPresetId: "h1_6",
