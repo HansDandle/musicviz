@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Frequency-Locked Bounce — Hirajoshi and other scales</title>
+<meta name="description" content="Bouncing balls whose periods are mathematically derived from real note-frequency ratios, so the motion actually encodes the scale you pick." />
+<style>
+  :root {
+    --bg: #15120d;
+    --panel: #1e1a14;
+    --panel-2: #241f17;
+    --border: #362f24;
+    --text: #f1ebdf;
+    --text-muted: #a3967f;
+    --text-faint: #6f6555;
+    --accent: #d3a256;
+    --accent-strong: #e8b968;
+    --accent2: #5fa89e;
+    --accent2-strong: #7ec4ba;
+    --focus: #e8b968;
+    --canvas-bg: #100d09;
+    --canvas-ground: #443a2a;
+    font-size: 16px;
+  }
+
+  :root[data-theme="light"] {
+    --bg: #f6f1e6;
+    --panel: #ffffff;
+    --panel-2: #fbf7ee;
+    --border: #e0d5bd;
+    --text: #241f16;
+    --text-muted: #6b6150;
+    --text-faint: #948a74;
+    --accent: #a8722a;
+    --accent-strong: #8c5c1e;
+    --accent2: #2f7d75;
+    --accent2-strong: #24625b;
+    --focus: #8c5c1e;
+    --canvas-bg: #fffdf8;
+    --canvas-ground: #d8cbac;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f6f1e6;
+      --panel: #ffffff;
+      --panel-2: #fbf7ee;
+      --border: #e0d5bd;
+      --text: #241f16;
+      --text-muted: #6b6150;
+      --text-faint: #948a74;
+      --accent: #a8722a;
+      --accent-strong: #8c5c1e;
+      --accent2: #2f7d75;
+      --accent2-strong: #24625b;
+      --focus: #8c5c1e;
+      --canvas-bg: #fffdf8;
+      --canvas-ground: #d8cbac;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+
+  body {
+    min-height: 100vh;
+    padding: 28px 20px 60px;
+  }
+
+  .mono {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .app {
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+
+  header.top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 24px;
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+  }
+
+  .title-block h1 {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1.5rem;
+    letter-spacing: 0.02em;
+    margin: 0 0 6px;
+    text-wrap: balance;
+    font-weight: 600;
+  }
+
+  .title-block .subtitle {
+    margin: 0;
+    max-width: 62ch;
+    color: var(--text-muted);
+    font-size: 0.92rem;
+    line-height: 1.55;
+  }
+
+  .title-block .subtitle strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  button.theme-toggle {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button.theme-toggle:hover { color: var(--text); border-color: var(--accent); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 272px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  .controls {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .field-group + .field-group {
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+  }
+
+  .field-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-faint);
+    font-weight: 600;
+  }
+
+  select, input[type="range"] {
+    width: 100%;
+  }
+
+  select {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 8px;
+    font-size: 0.85rem;
+    font-family: inherit;
+  }
+  select:focus-visible, button:focus-visible, input:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .note-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+
+  .note-btn {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 7px 4px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    transition: background 120ms, border-color 120ms, color 120ms;
+  }
+  .note-btn:hover { border-color: var(--accent); color: var(--text); }
+  .note-btn.active {
+    color: #16140f;
+    font-weight: 700;
+    border-color: transparent;
+  }
+
+  .row-label-value {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+  .row-label-value .val {
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  .sound-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .switch {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    flex: none;
+  }
+  .switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+  .switch .track {
+    position: absolute; inset: 0;
+    background: var(--border);
+    border-radius: 999px;
+    transition: background 150ms;
+  }
+  .switch .thumb {
+    position: absolute; top: 2px; left: 2px;
+    width: 18px; height: 18px;
+    background: var(--text-faint);
+    border-radius: 50%;
+    transition: transform 150ms, background 150ms;
+  }
+  .switch input:checked + .track { background: color-mix(in srgb, var(--accent2) 35%, var(--border)); }
+  .switch input:checked + .track + .thumb { transform: translateX(18px); background: var(--accent2-strong); }
+
+  .stage {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 16px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .stage canvas {
+    width: 100%;
+    display: block;
+    background: var(--canvas-bg);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+  }
+
+  .stage-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .transport {
+    display: flex;
+    gap: 8px;
+  }
+
+  button.transport-btn {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button.transport-btn:hover { border-color: var(--accent); }
+  button.transport-btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #1a1509;
+  }
+  button.transport-btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+
+  .stat {
+    font-size: 0.76rem;
+    color: var(--text-faint);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .stat .val {
+    color: var(--accent2-strong);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 600;
+  }
+
+  footer.note {
+    max-width: 1180px;
+    margin: 22px auto 0;
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="top">
+    <div class="title-block">
+      <h1>frequency-locked bounce</h1>
+      <p class="subtitle">
+        A viral clip claimed five bouncing spheres were "locked to the Hirajoshi scale" —
+        but the balls' timing had nothing to do with the notes' actual frequencies; any five
+        pitches would have bounced identically. Here it's the opposite: <strong>every ball's
+        bounce period is the literal reciprocal of its note's frequency ratio</strong>
+        (equal temperament, 2<sup>n/12</sup>). The geometry you watch is the pitch
+        relationship you'd hear.
+      </p>
+    </div>
+    <button class="theme-toggle" id="themeToggle" type="button">theme: auto</button>
+  </header>
+
+  <div class="layout">
+    <aside class="controls">
+
+      <div class="field-group">
+        <label class="field-label" for="presetSelect">Scale</label>
+        <select id="presetSelect"></select>
+        <div class="note-grid" id="noteGrid"></div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Root note</label>
+        <div class="two-col">
+          <select id="rootNote"></select>
+          <select id="rootOctave"></select>
+        </div>
+        <div class="row-label-value">
+          <span>Root frequency</span>
+          <span class="val mono" id="rootFreqVal">261.6 Hz</span>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="periodSlider">Root bounce period</label>
+        <input type="range" id="periodSlider" min="0.6" max="5" step="0.05" value="2.4" />
+        <div class="row-label-value">
+          <span>Period at root</span>
+          <span class="val mono" id="periodVal">2.40 s</span>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Sound</label>
+        <div class="sound-row">
+          <label class="switch">
+            <input type="checkbox" id="soundToggle" />
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+          <span style="font-size:0.82rem; color:var(--text-muted);">play true pitch on each bounce</span>
+        </div>
+        <input type="range" id="volumeSlider" min="0" max="100" step="1" value="55" />
+      </div>
+
+    </aside>
+
+    <main class="stage">
+      <canvas id="viz" height="460"></canvas>
+      <div class="stage-footer">
+        <div class="transport">
+          <button class="transport-btn primary" id="playPauseBtn" type="button">Pause</button>
+          <button class="transport-btn" id="restartBtn" type="button">Restart in sync</button>
+        </div>
+        <div class="stat">Near-alignment events <span class="val mono" id="syncCount">0</span></div>
+      </div>
+    </main>
+  </div>
+
+  <footer class="note">
+    Ratios use 12-tone equal temperament, so most of these scales never realign exactly —
+    they drift in and out of phase, occasionally landing close ("near-alignment"). That drift
+    is itself the honest picture: real musical intervals like a major third or a fifth are only
+    close to simple whole-number ratios on a piano, not exact.
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var NOTE_NAMES = ["C","D♭","D","E♭","E","F","G♭","G","A♭","A","B♭","B"];
+  var C4 = 261.6255653005986;
+
+  var PRESETS = [
+    { id: "hirajoshi",  label: "Hirajoshi (C D E♭ G A♭)",  offsets: [0,2,3,7,8] },
+    { id: "in",         label: "In scale (Japanese)",       offsets: [0,1,5,7,8] },
+    { id: "yo",         label: "Yo scale (Japanese)",       offsets: [0,2,5,7,9] },
+    { id: "majpent",    label: "Major pentatonic",          offsets: [0,2,4,7,9] },
+    { id: "minpent",    label: "Minor pentatonic",          offsets: [0,3,5,7,10] },
+    { id: "wholetone",  label: "Whole tone",                offsets: [0,2,4,6,8,10] },
+    { id: "chromatic",  label: "Chromatic (all 12)",        offsets: [0,1,2,3,4,5,6,7,8,9,10,11] },
+    { id: "custom",     label: "Custom",                    offsets: [] }
+  ];
+
+  var state = {
+    rootNoteIndex: 0,   // C
+    rootOctave: 4,
+    activeOffsets: PRESETS[0].offsets.slice(),
+    presetId: "hirajoshi",
+    basePeriod: 2.4,
+    playing: true,
+    soundOn: false,
+    volume: 0.55,
+    simTime: 0,
+    syncCount: 0
+  };
+
+  var balls = []; // {offset, freq, ratio, period, lastBounceIdx, color}
+
+  function noteFreq(rootIdx, octave) {
+    return C4 * Math.pow(2, rootIdx / 12) * Math.pow(2, octave - 4);
+  }
+
+  function hueForOffset(offset) {
+    // amber (root, low) -> teal (upper range) across an octave
+    return 34 + (offset / 11) * 150;
+  }
+
+  function rebuildBalls() {
+    var rootFreq = noteFreq(state.rootNoteIndex, state.rootOctave);
+    var offsets = state.activeOffsets.slice().sort(function (a, b) { return a - b; });
+    balls = offsets.map(function (offset) {
+      var ratio = Math.pow(2, offset / 12);
+      var freq = rootFreq * ratio;
+      var period = state.basePeriod / ratio;
+      var noteIdx = (state.rootNoteIndex + offset) % 12;
+      return {
+        offset: offset,
+        noteName: NOTE_NAMES[noteIdx],
+        freq: freq,
+        ratio: ratio,
+        period: period,
+        lastBounceIdx: -1,
+        hue: hueForOffset(offset)
+      };
+    });
+    document.getElementById("rootFreqVal").textContent = rootFreq.toFixed(1) + " Hz";
+  }
+
+  // ---------- UI: preset select ----------
+  var presetSelect = document.getElementById("presetSelect");
+  PRESETS.forEach(function (p) {
+    var opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.label;
+    presetSelect.appendChild(opt);
+  });
+  presetSelect.value = state.presetId;
+  presetSelect.addEventListener("change", function () {
+    state.presetId = presetSelect.value;
+    var preset = PRESETS.filter(function (p) { return p.id === state.presetId; })[0];
+    if (preset && preset.id !== "custom") {
+      state.activeOffsets = preset.offsets.slice();
+    }
+    renderNoteGrid();
+    rebuildBalls();
+    resetSim();
+  });
+
+  // ---------- UI: note grid ----------
+  var noteGrid = document.getElementById("noteGrid");
+  function renderNoteGrid() {
+    noteGrid.innerHTML = "";
+    for (var s = 0; s < 12; s++) {
+      (function (semitone) {
+        var idx = (state.rootNoteIndex + semitone) % 12;
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "note-btn" + (state.activeOffsets.indexOf(semitone) !== -1 ? " active" : "");
+        btn.textContent = NOTE_NAMES[idx];
+        if (btn.classList.contains("active")) {
+          btn.style.background = "hsl(" + hueForOffset(semitone) + " 55% 55%)";
+          btn.style.borderColor = "hsl(" + hueForOffset(semitone) + " 55% 55%)";
+        }
+        btn.addEventListener("click", function () {
+          var pos = state.activeOffsets.indexOf(semitone);
+          if (pos !== -1) {
+            if (state.activeOffsets.length <= 1) return; // keep at least one
+            state.activeOffsets.splice(pos, 1);
+          } else {
+            state.activeOffsets.push(semitone);
+          }
+          state.presetId = "custom";
+          presetSelect.value = "custom";
+          renderNoteGrid();
+          rebuildBalls();
+          resetSim();
+        });
+        noteGrid.appendChild(btn);
+      })(s);
+    }
+  }
+
+  // ---------- UI: root note / octave ----------
+  var rootNoteSelect = document.getElementById("rootNote");
+  NOTE_NAMES.forEach(function (name, i) {
+    var opt = document.createElement("option");
+    opt.value = String(i);
+    opt.textContent = name;
+    rootNoteSelect.appendChild(opt);
+  });
+  rootNoteSelect.value = "0";
+  rootNoteSelect.addEventListener("change", function () {
+    state.rootNoteIndex = parseInt(rootNoteSelect.value, 10);
+    renderNoteGrid();
+    rebuildBalls();
+  });
+
+  var rootOctaveSelect = document.getElementById("rootOctave");
+  [2,3,4,5,6].forEach(function (o) {
+    var opt = document.createElement("option");
+    opt.value = String(o);
+    opt.textContent = "Octave " + o;
+    rootOctaveSelect.appendChild(opt);
+  });
+  rootOctaveSelect.value = "4";
+  rootOctaveSelect.addEventListener("change", function () {
+    state.rootOctave = parseInt(rootOctaveSelect.value, 10);
+    rebuildBalls();
+  });
+
+  // ---------- UI: period slider ----------
+  var periodSlider = document.getElementById("periodSlider");
+  var periodVal = document.getElementById("periodVal");
+  periodSlider.value = String(state.basePeriod);
+  periodSlider.addEventListener("input", function () {
+    state.basePeriod = parseFloat(periodSlider.value);
+    periodVal.textContent = state.basePeriod.toFixed(2) + " s";
+    rebuildBalls();
+  });
+  periodVal.textContent = state.basePeriod.toFixed(2) + " s";
+
+  // ---------- UI: transport ----------
+  var playPauseBtn = document.getElementById("playPauseBtn");
+  playPauseBtn.addEventListener("click", function () {
+    state.playing = !state.playing;
+    playPauseBtn.textContent = state.playing ? "Pause" : "Play";
+  });
+
+  function resetSim() {
+    state.simTime = 0;
+    state.syncCount = 0;
+    document.getElementById("syncCount").textContent = "0";
+    balls.forEach(function (b) { b.lastBounceIdx = -1; });
+  }
+  document.getElementById("restartBtn").addEventListener("click", resetSim);
+
+  // ---------- Audio ----------
+  var audioCtx = null;
+  var masterGain = null;
+  var soundToggle = document.getElementById("soundToggle");
+  var volumeSlider = document.getElementById("volumeSlider");
+
+  function ensureAudio() {
+    if (audioCtx) return;
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new Ctx();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = state.volume * 0.6;
+    masterGain.connect(audioCtx.destination);
+  }
+
+  soundToggle.addEventListener("change", function () {
+    state.soundOn = soundToggle.checked;
+    if (state.soundOn) {
+      ensureAudio();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+    }
+  });
+  volumeSlider.addEventListener("input", function () {
+    state.volume = parseInt(volumeSlider.value, 10) / 100;
+    if (masterGain) masterGain.gain.value = state.volume * 0.6;
+  });
+
+  function pluck(freq) {
+    if (!state.soundOn || !audioCtx) return;
+    var now = audioCtx.currentTime;
+    var osc = audioCtx.createOscillator();
+    var g = audioCtx.createGain();
+    osc.type = "triangle";
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(0.9, now + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+    osc.connect(g);
+    g.connect(masterGain);
+    osc.start(now);
+    osc.stop(now + 0.46);
+  }
+
+  // ---------- Canvas ----------
+  var canvas = document.getElementById("viz");
+  var ctx = canvas.getContext("2d");
+  var dpr = Math.max(1, window.devicePixelRatio || 1);
+
+  function resizeCanvas() {
+    var cssWidth = canvas.parentElement.clientWidth;
+    var cssHeight = 460;
+    canvas.style.width = cssWidth + "px";
+    canvas.style.height = cssHeight + "px";
+    canvas.width = Math.round(cssWidth * dpr);
+    canvas.height = Math.round(cssHeight * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener("resize", resizeCanvas);
+
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  var flashAlpha = 0;
+
+  function draw() {
+    var w = canvas.clientWidth;
+    var h = canvas.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+
+    var groundY = h - 78;
+    var topMargin = 30;
+    var maxH = groundY - topMargin;
+
+    // ground line
+    ctx.strokeStyle = cssVar("--canvas-ground");
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(12, groundY + 0.5);
+    ctx.lineTo(w - 12, groundY + 0.5);
+    ctx.stroke();
+
+    var n = balls.length;
+    var spacing = w / (n + 1);
+    var radius = Math.max(10, Math.min(26, spacing * 0.32));
+
+    var atGroundCount = 0;
+
+    balls.forEach(function (b, i) {
+      var x = spacing * (i + 1);
+      var phase = (state.simTime % b.period) / b.period;
+      if (phase < 0) phase += 1;
+      var height = maxH * Math.abs(Math.sin(Math.PI * phase));
+      var y = groundY - height;
+
+      var nearGround = height < maxH * 0.015;
+      if (nearGround) atGroundCount++;
+
+      // guide line
+      ctx.strokeStyle = "hsla(" + b.hue + ", 40%, 55%, 0.12)";
+      ctx.beginPath();
+      ctx.moveTo(x, groundY);
+      ctx.lineTo(x, topMargin);
+      ctx.stroke();
+
+      // ball
+      ctx.beginPath();
+      ctx.fillStyle = "hsl(" + b.hue + ", 62%, 58%)";
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // labels
+      ctx.textAlign = "center";
+      ctx.fillStyle = cssVar("--text");
+      ctx.font = "600 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+      ctx.fillText(b.noteName, x, groundY + 20);
+
+      ctx.fillStyle = cssVar("--text-muted");
+      ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+      ctx.fillText(b.freq.toFixed(1) + " Hz", x, groundY + 36);
+      ctx.fillText("×" + b.ratio.toFixed(3), x, groundY + 50);
+      ctx.fillText(b.period.toFixed(2) + "s", x, groundY + 64);
+
+      // bounce -> sound trigger
+      var idx = Math.floor(state.simTime / b.period);
+      if (state.simTime > 0 && idx !== b.lastBounceIdx) {
+        if (b.lastBounceIdx !== -1) pluck(b.freq);
+        b.lastBounceIdx = idx;
+      } else if (b.lastBounceIdx === -1 && state.simTime === 0) {
+        b.lastBounceIdx = 0;
+      }
+    });
+
+    if (n > 1 && atGroundCount === n) {
+      if (flashAlpha < 0.05) {
+        state.syncCount++;
+        document.getElementById("syncCount").textContent = String(state.syncCount);
+      }
+      flashAlpha = 1;
+    }
+    if (flashAlpha > 0.001) {
+      ctx.fillStyle = "hsla(178, 55%, 55%," + (flashAlpha * 0.16) + ")";
+      ctx.fillRect(0, topMargin - 10, w, groundY - topMargin + 20);
+      flashAlpha *= 0.92;
+    }
+  }
+
+  var lastTs = null;
+  function frame(ts) {
+    if (lastTs === null) lastTs = ts;
+    var dt = (ts - lastTs) / 1000;
+    lastTs = ts;
+    if (state.playing) state.simTime += dt;
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- theme toggle ----------
+  var themeToggle = document.getElementById("themeToggle");
+  var themeState = "auto";
+  themeToggle.addEventListener("click", function () {
+    themeState = themeState === "auto" ? "dark" : (themeState === "dark" ? "light" : "auto");
+    if (themeState === "auto") {
+      document.documentElement.removeAttribute("data-theme");
+    } else {
+      document.documentElement.setAttribute("data-theme", themeState);
+    }
+    themeToggle.textContent = "theme: " + themeState;
+  });
+
+  // ---------- init ----------
+  renderNoteGrid();
+  rebuildBalls();
+  resizeCanvas();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
