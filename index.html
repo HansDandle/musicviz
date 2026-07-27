@@ -353,12 +353,7 @@
   <header class="top">
     <div class="title-block">
       <h1>frequency-locked bounce</h1>
-      <p class="subtitle">
-        Each ball's bounce period is <strong>the literal reciprocal of its note's frequency
-        ratio</strong> (equal temperament, 2<sup>n/N</sup> for N steps per octave) — so the
-        geometry you watch is the pitch relationship you'd hear. Pick a scale, add octaves
-        or quarter-tones, and listen with different instrument voices.
-      </p>
+      <p class="subtitle" id="subtitleText"></p>
     </div>
     <button class="theme-toggle" id="themeToggle" type="button">theme: auto</button>
   </header>
@@ -860,8 +855,28 @@
   });
 
   // ---------- UI: scale-panel visibility per tuning system ----------
+  var SUBTITLE_HTML = {
+    et: 'Each ball’s bounce period is <strong>the literal reciprocal of its note’s frequency '
+      + 'ratio</strong> (equal temperament, 2<sup>n/N</sup> for N steps per octave) — so the '
+      + 'geometry you watch is the pitch relationship you’d hear. Pick a scale, add octaves '
+      + 'or quarter-tones, and listen with different instrument voices.',
+    ji: 'Each ball’s bounce period is <strong>the literal reciprocal of its note’s frequency '
+      + 'ratio</strong> — here a rational fraction (just intonation) instead of a power of two, '
+      + 'so the scale can realign exactly instead of only drifting close. Pick a scale, add octaves, '
+      + 'and listen with different instrument voices.',
+    harmonic: 'Each ball’s bounce period is <strong>the literal reciprocal of its note’s '
+      + 'frequency ratio</strong> — here a whole-number multiple of the root (the harmonic '
+      + 'series), which guarantees an exact realignment every base-period cycle, no matter which '
+      + 'harmonics you pick. Choose harmonics and listen with different instrument voices.',
+    bp: 'Each ball’s bounce period is <strong>the literal reciprocal of its note’s frequency '
+      + 'ratio</strong> (Bohlen-Pierce equal temperament, 3<sup>n/13</sup> — a 3:1 tritave split '
+      + 'into 13 steps instead of a 2:1 octave into 12). Pick which steps are active, add tritaves, '
+      + 'and listen with different instrument voices.'
+  };
+
   function updateScaleUIVisibility() {
     var system = state.tuningSystem;
+    document.getElementById("subtitleText").innerHTML = SUBTITLE_HTML[system] || SUBTITLE_HTML.et;
     document.getElementById("scaleGroup").style.display = system === "harmonic" ? "none" : "";
     document.getElementById("harmonicGroup").style.display = system === "harmonic" ? "" : "none";
     document.getElementById("quarterToneRow").style.display = system === "et" ? "" : "none";
