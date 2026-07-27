@@ -367,10 +367,20 @@
     <aside class="controls">
 
       <div class="field-group">
+        <label class="field-label" for="tuningSelect">Tuning system</label>
+        <select id="tuningSelect">
+          <option value="et">Equal temperament</option>
+          <option value="ji">Just intonation</option>
+          <option value="harmonic">Harmonic series</option>
+          <option value="bp">Bohlen-Pierce (tritave)</option>
+        </select>
+      </div>
+
+      <div class="field-group" id="scaleGroup">
         <label class="field-label" for="presetSelect">Scale</label>
         <select id="presetSelect"></select>
         <div class="note-grid" id="noteGrid"></div>
-        <div class="sound-row" style="margin-top:4px;">
+        <div class="sound-row" id="quarterToneRow" style="margin-top:4px;">
           <label class="switch">
             <input type="checkbox" id="quarterToneToggle" />
             <span class="track"></span>
@@ -380,9 +390,15 @@
         </div>
       </div>
 
+      <div class="field-group" id="harmonicGroup">
+        <label class="field-label" for="harmonicPresetSelect">Harmonics</label>
+        <select id="harmonicPresetSelect"></select>
+        <div class="note-grid" id="harmonicGrid"></div>
+      </div>
+
       <div class="field-group">
         <label class="field-label">Root note</label>
-        <div class="two-col">
+        <div class="two-col" id="rootNoteOctaveRow">
           <select id="rootNote"></select>
           <select id="rootOctave"></select>
         </div>
@@ -392,15 +408,15 @@
         </div>
       </div>
 
-      <div class="field-group">
-        <label class="field-label">Octaves</label>
+      <div class="field-group" id="octaveGroup">
+        <label class="field-label" id="octaveGroupLabel">Octaves</label>
         <div class="sound-row">
           <label class="switch">
             <input type="checkbox" id="octaveToggle" />
             <span class="track"></span>
             <span class="thumb"></span>
           </label>
-          <span style="font-size:0.82rem; color:var(--text-muted);">double: add one octave above + below each note</span>
+          <span style="font-size:0.82rem; color:var(--text-muted);" id="octaveToggleLabel">double: add one octave above + below each note</span>
         </div>
       </div>
 
@@ -436,12 +452,12 @@
           <button class="transport-btn primary" id="playPauseBtn" type="button">Pause</button>
           <button class="transport-btn" id="restartBtn" type="button">Restart in sync</button>
         </div>
-        <div class="stat">Near-alignment events <span class="val mono" id="syncCount">0</span></div>
+        <div class="stat"><span id="syncLabel">Near-alignment events</span> <span class="val mono" id="syncCount">0</span></div>
       </div>
     </main>
   </div>
 
-  <footer class="note">
+  <footer class="note" id="tuningFooterNote">
     Ratios use equal temperament, so most of these scales never realign exactly —
     they drift in and out of phase, occasionally landing close ("near-alignment"). That drift
     is itself the honest picture: real musical intervals like a major third or a fifth are only
@@ -457,25 +473,51 @@
   var NOTE_NAMES = ["C","D♭","D","E♭","E","F","G♭","G","A♭","A","B♭","B"];
   var C4 = 261.6255653005986;
 
-  // Scale presets are authored in semitone units (12/octave); they're
-  // rescaled to the active step resolution (12 or 24) when applied.
+  // 5-limit just-intonation ratios for the 12 chromatic degrees. Unlike
+  // equal temperament's 2^(n/12), these are small-integer fractions, so
+  // scales built from them share an exact common period and really do
+  // realign — not just drift close.
+  var JI_RATIOS = [1/1, 16/15, 9/8, 6/5, 5/4, 4/3, 45/32, 3/2, 8/5, 5/3, 16/9, 15/8];
+
+  // Scale presets are authored in semitone units (12/octave) and rescaled
+  // to the active step resolution when applied — except unit:"quartertone"
+  // presets (intervals that don't land on a semitone), which are authored
+  // directly in 24-steps-per-octave units and force quarter-tone mode on.
   var PRESETS = [
-    { id: "hirajoshi",  label: "Hirajoshi (C D E♭ G A♭)",  offsets: [0,2,3,7,8] },
-    { id: "in",         label: "In scale (Japanese)",       offsets: [0,1,5,7,8] },
-    { id: "yo",         label: "Yo scale (Japanese)",       offsets: [0,2,5,7,9] },
-    { id: "majpent",    label: "Major pentatonic",          offsets: [0,2,4,7,9] },
-    { id: "minpent",    label: "Minor pentatonic",          offsets: [0,3,5,7,10] },
-    { id: "wholetone",  label: "Whole tone",                offsets: [0,2,4,6,8,10] },
-    { id: "chromatic",  label: "Chromatic (all 12)",        offsets: [0,1,2,3,4,5,6,7,8,9,10,11] },
-    { id: "custom",     label: "Custom",                    offsets: [] }
+    { id: "hirajoshi",  label: "Hirajoshi (C D E♭ G A♭)",     offsets: [0,2,3,7,8] },
+    { id: "in",         label: "In scale (Japanese)",          offsets: [0,1,5,7,8] },
+    { id: "yo",         label: "Yo scale (Japanese)",          offsets: [0,2,5,7,9] },
+    { id: "majpent",    label: "Major pentatonic",             offsets: [0,2,4,7,9] },
+    { id: "minpent",    label: "Minor pentatonic",             offsets: [0,3,5,7,10] },
+    { id: "hungarian",  label: "Hungarian minor (Gypsy)",      offsets: [0,2,3,6,7,8,11] },
+    { id: "wholetone",  label: "Whole tone",                   offsets: [0,2,4,6,8,10] },
+    { id: "chromatic",  label: "Chromatic (all 12)",           offsets: [0,1,2,3,4,5,6,7,8,9,10,11] },
+    { id: "rast",       label: "Maqam Rast (24-TET approx.)",  offsets: [0,4,7,10,14,17,21], unit: "quartertone" },
+    { id: "custom",     label: "Custom",                       offsets: [] }
+  ];
+
+  // Curated harmonic-series groupings (ratio = the harmonic number itself,
+  // so periods are always exact integer fractions of the root's — the
+  // scale that actually can converge into perfect alignment, not just
+  // near it).
+  var HARMONIC_PRESETS = [
+    { id: "h1_6",  label: "Harmonics 1–6",              harmonics: [1,2,3,4,5,6] },
+    { id: "h1_8",  label: "Harmonics 1–8",               harmonics: [1,2,3,4,5,6,7,8] },
+    { id: "odd",   label: "Odd harmonics (1,3,5,7,9)",   harmonics: [1,3,5,7,9] },
+    { id: "cluster", label: "Overtone cluster (4–8)",    harmonics: [4,5,6,7,8] },
+    { id: "hcustom", label: "Custom",                    harmonics: [] }
   ];
 
   var state = {
-    rootNoteIndex: 0,   // C
+    tuningSystem: "et",   // 'et' | 'ji' | 'harmonic' | 'bp'
+    rootNoteIndex: 0,     // C
     rootOctave: 4,
     stepsPerOctave: 12,
     activeOffsets: PRESETS[0].offsets.slice(),
     presetId: "hirajoshi",
+    activeBPOffsets: [0,1,2,3,4,5,6,7,8,9,10,11,12],
+    activeHarmonics: HARMONIC_PRESETS[0].harmonics.slice(),
+    harmonicPresetId: "h1_6",
     octaveDouble: false,
     basePeriod: 2.4,
     playing: true,
@@ -492,6 +534,12 @@
     return C4 * Math.pow(2, rootIdx / 12) * Math.pow(2, octave - 4);
   }
 
+  function jiRatio(totalOffset) {
+    var octaves = Math.floor(totalOffset / 12);
+    var deg = ((totalOffset % 12) + 12) % 12;
+    return JI_RATIOS[deg] * Math.pow(2, octaves);
+  }
+
   // Name a step (0..stepsPerOctave-1). At 24 steps/octave, odd steps fall
   // between the 12 standard pitch classes, labeled with a "+" (quarter-sharp).
   function stepName(step, stepsPerOctave) {
@@ -506,11 +554,39 @@
     return 34 + (step / (stepsPerOctave - 1)) * 150;
   }
 
+  function buildHarmonicBalls(rootFreq) {
+    var harmonics = state.activeHarmonics.slice().sort(function (a, b) { return a - b; });
+    return harmonics.map(function (k) {
+      var freq = rootFreq * k;
+      var period = state.basePeriod / k;
+      return {
+        offset: k,
+        shift: 0,
+        noteName: "×" + k,
+        freq: freq,
+        ratio: k,
+        period: period,
+        lastBounceIdx: -1,
+        hue: 34 + (Math.min(k, 16) - 1) / 15 * 150
+      };
+    });
+  }
+
   function rebuildBalls() {
-    var stepsPerOctave = state.stepsPerOctave;
+    var system = state.tuningSystem;
     var rootFreq = noteFreq(state.rootNoteIndex, state.rootOctave);
-    var rootIndexInSteps = state.rootNoteIndex * (stepsPerOctave / 12);
-    var baseOffsets = state.activeOffsets.slice().sort(function (a, b) { return a - b; });
+    document.getElementById("rootFreqVal").textContent = rootFreq.toFixed(1) + " Hz";
+
+    if (system === "harmonic") {
+      balls = buildHarmonicBalls(rootFreq);
+      return;
+    }
+
+    var stepsPerOctave = system === "bp" ? 13 : (system === "ji" ? 12 : state.stepsPerOctave);
+    var periodBase = system === "bp" ? 3 : 2; // tritave (3:1) instead of octave (2:1)
+    var rootIndexInSteps = system === "bp" ? 0 : state.rootNoteIndex * (stepsPerOctave / 12);
+    var baseOffsets = (system === "bp" ? state.activeBPOffsets : state.activeOffsets)
+      .slice().sort(function (a, b) { return a - b; });
     var shifts = state.octaveDouble ? [-1, 0, 1] : [0];
 
     var combos = [];
@@ -522,16 +598,19 @@
     combos.sort(function (a, b) { return a.total - b.total; });
 
     balls = combos.map(function (c) {
-      var ratio = Math.pow(2, c.total / stepsPerOctave);
+      var ratio = system === "ji" ? jiRatio(c.total) : Math.pow(periodBase, c.total / stepsPerOctave);
       var freq = rootFreq * ratio;
       var period = state.basePeriod / ratio;
       var absStep = rootIndexInSteps + c.total;
       var octaveCarry = Math.floor(absStep / stepsPerOctave);
       var pitchClassStep = ((absStep % stepsPerOctave) + stepsPerOctave) % stepsPerOctave;
+      var noteName = system === "bp"
+        ? "T" + pitchClassStep + (octaveCarry !== 0 ? (octaveCarry > 0 ? "+" + octaveCarry : String(octaveCarry)) : "")
+        : stepName(pitchClassStep, stepsPerOctave) + (state.rootOctave + octaveCarry);
       return {
         offset: c.offset,
         shift: c.shift,
-        noteName: stepName(pitchClassStep, stepsPerOctave) + (state.rootOctave + octaveCarry),
+        noteName: noteName,
         freq: freq,
         ratio: ratio,
         period: period,
@@ -539,8 +618,29 @@
         hue: hueForOffset(pitchClassStep, stepsPerOctave)
       };
     });
-    document.getElementById("rootFreqVal").textContent = rootFreq.toFixed(1) + " Hz";
   }
+
+  // ---------- UI: tuning system ----------
+  var tuningSelect = document.getElementById("tuningSelect");
+  tuningSelect.value = state.tuningSystem;
+  tuningSelect.addEventListener("change", function () {
+    var newSystem = tuningSelect.value;
+    if (newSystem === "ji" && state.stepsPerOctave === 24) {
+      // JI's ratio table only covers 12 degrees; drop back to semitones.
+      state.activeOffsets = state.activeOffsets
+        .filter(function (o) { return o % 2 === 0; })
+        .map(function (o) { return o / 2; });
+      if (state.activeOffsets.length === 0) state.activeOffsets = [0];
+      state.stepsPerOctave = 12;
+      quarterToneToggle.checked = false;
+    }
+    state.tuningSystem = newSystem;
+    updateScaleUIVisibility();
+    renderNoteGrid();
+    renderHarmonicGrid();
+    rebuildBalls();
+    resetSim();
+  });
 
   // ---------- UI: preset select ----------
   var presetSelect = document.getElementById("presetSelect");
@@ -555,19 +655,66 @@
     state.presetId = presetSelect.value;
     var preset = PRESETS.filter(function (p) { return p.id === state.presetId; })[0];
     if (preset && preset.id !== "custom") {
-      var scale = state.stepsPerOctave / 12;
-      state.activeOffsets = preset.offsets.map(function (o) { return o * scale; });
+      if (preset.unit === "quartertone") {
+        // Neutral intervals (like Rast's neutral 3rd) don't land on a
+        // semitone, so this preset is authored directly in 24-step units
+        // and needs quarter-tone equal temperament switched on for it.
+        if (state.tuningSystem !== "et") {
+          state.tuningSystem = "et";
+          tuningSelect.value = "et";
+        }
+        state.stepsPerOctave = 24;
+        quarterToneToggle.checked = true;
+        state.activeOffsets = preset.offsets.slice();
+      } else {
+        var scale = state.stepsPerOctave / 12;
+        state.activeOffsets = preset.offsets.map(function (o) { return o * scale; });
+      }
     }
+    updateScaleUIVisibility();
     renderNoteGrid();
     rebuildBalls();
     resetSim();
   });
 
-  // ---------- UI: note grid ----------
+  // ---------- UI: note grid (equal temperament / just intonation / Bohlen-Pierce) ----------
   var noteGrid = document.getElementById("noteGrid");
   function renderNoteGrid() {
     noteGrid.innerHTML = "";
-    var stepsPerOctave = state.stepsPerOctave;
+    var system = state.tuningSystem;
+
+    if (system === "bp") {
+      noteGrid.style.gridTemplateColumns = "repeat(5, 1fr)";
+      for (var t = 0; t < 13; t++) {
+        (function (step) {
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "note-btn" + (state.activeBPOffsets.indexOf(step) !== -1 ? " active" : "");
+          btn.textContent = "T" + step;
+          if (btn.classList.contains("active")) {
+            var hue = hueForOffset(step, 13);
+            btn.style.background = "hsl(" + hue + " 55% 55%)";
+            btn.style.borderColor = "hsl(" + hue + " 55% 55%)";
+          }
+          btn.addEventListener("click", function () {
+            var pos = state.activeBPOffsets.indexOf(step);
+            if (pos !== -1) {
+              if (state.activeBPOffsets.length <= 1) return;
+              state.activeBPOffsets.splice(pos, 1);
+            } else {
+              state.activeBPOffsets.push(step);
+            }
+            renderNoteGrid();
+            rebuildBalls();
+            resetSim();
+          });
+          noteGrid.appendChild(btn);
+        })(t);
+      }
+      return;
+    }
+
+    var stepsPerOctave = system === "ji" ? 12 : state.stepsPerOctave;
     noteGrid.style.gridTemplateColumns = "repeat(" + (stepsPerOctave === 24 ? 6 : 4) + ", 1fr)";
     var rootIndexInSteps = state.rootNoteIndex * (stepsPerOctave / 12);
     for (var s = 0; s < stepsPerOctave; s++) {
@@ -597,6 +744,61 @@
         });
         noteGrid.appendChild(btn);
       })(s);
+    }
+  }
+
+  // ---------- UI: harmonic series picker ----------
+  var harmonicPresetSelect = document.getElementById("harmonicPresetSelect");
+  HARMONIC_PRESETS.forEach(function (p) {
+    var opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.label;
+    harmonicPresetSelect.appendChild(opt);
+  });
+  harmonicPresetSelect.value = state.harmonicPresetId;
+  harmonicPresetSelect.addEventListener("change", function () {
+    state.harmonicPresetId = harmonicPresetSelect.value;
+    var preset = HARMONIC_PRESETS.filter(function (p) { return p.id === state.harmonicPresetId; })[0];
+    if (preset && preset.id !== "hcustom") {
+      state.activeHarmonics = preset.harmonics.slice();
+    }
+    renderHarmonicGrid();
+    rebuildBalls();
+    resetSim();
+  });
+
+  var harmonicGrid = document.getElementById("harmonicGrid");
+  var MAX_HARMONIC = 16;
+  function renderHarmonicGrid() {
+    harmonicGrid.innerHTML = "";
+    harmonicGrid.style.gridTemplateColumns = "repeat(4, 1fr)";
+    for (var k = 1; k <= MAX_HARMONIC; k++) {
+      (function (harmonic) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "note-btn" + (state.activeHarmonics.indexOf(harmonic) !== -1 ? " active" : "");
+        btn.textContent = "×" + harmonic;
+        if (btn.classList.contains("active")) {
+          var hue = 34 + (Math.min(harmonic, 16) - 1) / 15 * 150;
+          btn.style.background = "hsl(" + hue + " 55% 55%)";
+          btn.style.borderColor = "hsl(" + hue + " 55% 55%)";
+        }
+        btn.addEventListener("click", function () {
+          var pos = state.activeHarmonics.indexOf(harmonic);
+          if (pos !== -1) {
+            if (state.activeHarmonics.length <= 1) return;
+            state.activeHarmonics.splice(pos, 1);
+          } else {
+            state.activeHarmonics.push(harmonic);
+          }
+          state.harmonicPresetId = "hcustom";
+          harmonicPresetSelect.value = "hcustom";
+          renderHarmonicGrid();
+          rebuildBalls();
+          resetSim();
+        });
+        harmonicGrid.appendChild(btn);
+      })(k);
     }
   }
 
@@ -656,6 +858,42 @@
     state.rootOctave = parseInt(rootOctaveSelect.value, 10);
     rebuildBalls();
   });
+
+  // ---------- UI: scale-panel visibility per tuning system ----------
+  function updateScaleUIVisibility() {
+    var system = state.tuningSystem;
+    document.getElementById("scaleGroup").style.display = system === "harmonic" ? "none" : "";
+    document.getElementById("harmonicGroup").style.display = system === "harmonic" ? "" : "none";
+    document.getElementById("quarterToneRow").style.display = system === "et" ? "" : "none";
+
+    var showRootNote = system === "et" || system === "ji";
+    rootNoteSelect.style.display = showRootNote ? "" : "none";
+    document.getElementById("rootNoteOctaveRow").style.gridTemplateColumns = showRootNote ? "1fr 1fr" : "1fr";
+
+    document.getElementById("octaveGroup").style.display = system === "harmonic" ? "none" : "";
+    document.getElementById("octaveGroupLabel").textContent = system === "bp" ? "Tritaves" : "Octaves";
+    document.getElementById("octaveToggleLabel").textContent = system === "bp"
+      ? "triple: add one tritave above + below each note"
+      : "double: add one octave above + below each note";
+
+    var exactSync = system === "ji" || system === "harmonic";
+    document.getElementById("syncLabel").textContent = exactSync ? "Alignment events" : "Near-alignment events";
+
+    var footerNote = document.getElementById("tuningFooterNote");
+    if (exactSync) {
+      footerNote.textContent = "Ratios here are rational (small-integer fractions), so this scale really "
+        + "does realign exactly on a regular cycle — not just drift close, the way equal temperament does.";
+    } else if (system === "bp") {
+      footerNote.textContent = "Bohlen-Pierce divides the tritave (3:1, roughly an octave plus a fifth) into "
+        + "13 equal steps instead of dividing the octave (2:1) into 12 — so, unlike ordinary scales, it never "
+        + "repeats at the octave.";
+    } else {
+      footerNote.textContent = "Ratios use equal temperament, so most of these scales never realign exactly "
+        + "— they drift in and out of phase, occasionally landing close (\"near-alignment\"). That drift is "
+        + "itself the honest picture: real musical intervals like a major third or a fifth are only close to "
+        + "simple whole-number ratios on a piano, not exact.";
+    }
+  }
 
   // ---------- UI: period slider ----------
   var periodSlider = document.getElementById("periodSlider");
@@ -1054,7 +1292,9 @@
   });
 
   // ---------- init ----------
+  updateScaleUIVisibility();
   renderNoteGrid();
+  renderHarmonicGrid();
   rebuildBalls();
   resizeCanvas();
   requestAnimationFrame(frame);
