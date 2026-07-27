@@ -448,6 +448,31 @@
         <input type="range" id="volumeSlider" min="0" max="100" step="1" value="55" />
       </div>
 
+      <div class="field-group">
+        <label class="field-label">Drums</label>
+        <div class="sound-row">
+          <label class="switch">
+            <input type="checkbox" id="drumsToggle" />
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+          <span style="font-size:0.82rem; color:var(--text-muted);">add a backing beat</span>
+        </div>
+        <select id="drumPatternSelect" style="margin-top:2px;"></select>
+        <select id="drumTempoModeSelect" style="margin-top:6px;">
+          <option value="locked">Tempo: locked to bounce period</option>
+          <option value="independent">Tempo: independent BPM</option>
+        </select>
+        <div id="drumBpmRow" style="margin-top:6px;">
+          <input type="range" id="drumBpmSlider" min="60" max="160" step="1" value="90" />
+        </div>
+        <div class="row-label-value">
+          <span>Tempo</span>
+          <span class="val mono" id="drumBpmVal">— BPM</span>
+        </div>
+        <input type="range" id="drumVolumeSlider" min="0" max="100" step="1" value="60" style="margin-top:2px;" />
+      </div>
+
     </aside>
 
     <main class="stage">
@@ -537,6 +562,38 @@
     { id: "hcustom", label: "Custom",                    harmonics: [] }
   ];
 
+  // Drum patterns: 16 steps (16th notes) per bar, 4 beats per bar. "Locked"
+  // tempo mode treats one beat as the root note's own bounce period, so
+  // the backing rhythm is literally derived from the same math driving
+  // the balls, not just running alongside it.
+  var DRUM_PATTERNS = {
+    boombap: {
+      label: "Boom bap",
+      kick:  [1,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0],
+      snare: [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0],
+      hihat: [1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0]
+    },
+    trap: {
+      label: "Trap",
+      kick:  [1,0,0,0, 0,0,0,1, 0,0,1,0, 0,0,0,0],
+      snare: [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0],
+      hihat: [1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1]
+    },
+    fourfloor: {
+      label: "Four on the floor",
+      kick:  [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0],
+      snare: [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0],
+      hihat: [0,0,1,0, 0,0,1,0, 0,0,1,0, 0,0,1,0]
+    },
+    halftime: {
+      label: "Halftime",
+      kick:  [1,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0],
+      snare: [0,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0],
+      hihat: [1,0,0,0, 1,0,1,0, 1,0,0,0, 1,0,1,0]
+    }
+  };
+  var DRUM_PATTERN_IDS = ["boombap", "trap", "fourfloor", "halftime"];
+
   var state = {
     tuningSystem: "et",   // 'et' | 'ji' | 'harmonic' | 'bp'
     rootNoteIndex: 0,     // C
@@ -553,6 +610,11 @@
     soundOn: false,
     voice: "piano",
     volume: 0.55,
+    drumsOn: false,
+    drumPattern: "boombap",
+    drumTempoMode: "locked", // 'locked' | 'independent'
+    drumBpm: 90,
+    drumVolume: 0.6,
     simTime: 0,
     syncCount: 0,
     nextAlignmentTime: null,
@@ -611,6 +673,15 @@
     if (!isNaN(vol)) state.volume = Math.max(0, Math.min(100, vol)) / 100;
 
     state.octaveDouble = params.get("d") === "1";
+    state.drumsOn = params.get("du") === "1";
+    var dp = params.get("dp");
+    if (dp && ["boombap", "trap", "fourfloor", "halftime"].indexOf(dp) !== -1) state.drumPattern = dp;
+    var dm = params.get("dm");
+    if (dm === "locked" || dm === "independent") state.drumTempoMode = dm;
+    var db = parseInt(params.get("db"), 10);
+    if (!isNaN(db) && db >= 60 && db <= 160) state.drumBpm = db;
+    var dv = parseInt(params.get("dv"), 10);
+    if (!isNaN(dv)) state.drumVolume = Math.max(0, Math.min(100, dv)) / 100;
 
     var n = params.get("n");
     if (n) {
@@ -1171,6 +1242,7 @@
     state.basePeriod = parseFloat(periodSlider.value);
     periodVal.textContent = state.basePeriod.toFixed(2) + " s";
     rebuildBalls();
+    if (state.drumTempoMode === "locked") updateDrumBpmDisplay();
   });
   periodVal.textContent = state.basePeriod.toFixed(2) + " s";
 
@@ -1186,6 +1258,7 @@
     state.syncCount = 0;
     document.getElementById("syncCount").textContent = "0";
     balls.forEach(function (b) { b.lastBounceIdx = -1; });
+    drumLastStepIdx = -1;
     scheduleNextAlignment();
   }
   document.getElementById("restartBtn").addEventListener("click", resetSim);
@@ -1226,6 +1299,9 @@
     masterGain = audioCtx.createGain();
     masterGain.gain.value = state.volume * 0.6;
     masterGain.connect(audioCtx.destination);
+    drumGain = audioCtx.createGain();
+    drumGain.gain.value = state.drumVolume * 0.7;
+    drumGain.connect(audioCtx.destination);
   }
 
   function unlockAudio() {
@@ -1251,6 +1327,55 @@
     state.volume = parseInt(volumeSlider.value, 10) / 100;
     if (masterGain) masterGain.gain.value = state.volume * 0.6;
   });
+
+  // ---------- UI: drums ----------
+  var drumsToggle = document.getElementById("drumsToggle");
+  drumsToggle.checked = state.drumsOn;
+  drumsToggle.addEventListener("change", function () {
+    state.drumsOn = drumsToggle.checked;
+    drumLastStepIdx = -1; // start the pattern fresh from step 0, not mid-bar
+  });
+
+  var drumPatternSelect = document.getElementById("drumPatternSelect");
+  DRUM_PATTERN_IDS.forEach(function (id) {
+    var opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = DRUM_PATTERNS[id].label;
+    drumPatternSelect.appendChild(opt);
+  });
+  drumPatternSelect.value = state.drumPattern;
+  drumPatternSelect.addEventListener("change", function () {
+    state.drumPattern = drumPatternSelect.value;
+  });
+
+  var drumTempoModeSelect = document.getElementById("drumTempoModeSelect");
+  drumTempoModeSelect.value = state.drumTempoMode;
+  drumTempoModeSelect.addEventListener("change", function () {
+    state.drumTempoMode = drumTempoModeSelect.value;
+    updateDrumTempoUI();
+  });
+
+  var drumBpmSlider = document.getElementById("drumBpmSlider");
+  drumBpmSlider.value = String(state.drumBpm);
+  drumBpmSlider.addEventListener("input", function () {
+    state.drumBpm = parseInt(drumBpmSlider.value, 10);
+    updateDrumBpmDisplay();
+  });
+
+  var drumVolumeSlider = document.getElementById("drumVolumeSlider");
+  drumVolumeSlider.value = String(Math.round(state.drumVolume * 100));
+  drumVolumeSlider.addEventListener("input", function () {
+    state.drumVolume = parseInt(drumVolumeSlider.value, 10) / 100;
+    if (drumGain) drumGain.gain.value = state.drumVolume * 0.7;
+  });
+
+  function updateDrumTempoUI() {
+    document.getElementById("drumBpmRow").style.display = state.drumTempoMode === "independent" ? "" : "none";
+    updateDrumBpmDisplay();
+  }
+  function updateDrumBpmDisplay() {
+    document.getElementById("drumBpmVal").textContent = Math.round(getEffectiveDrumBpm()) + " BPM";
+  }
 
   // Every voice below is synthesized live from oscillators/filters — no
   // sample files — so the page stays a single self-contained HTML file.
@@ -1410,6 +1535,114 @@
     if (!state.soundOn || !audioCtx) return;
     var now = audioCtx.currentTime;
     (VOICES[state.voice] || playPiano)(freq, now);
+  }
+
+  // ---------- Drums ----------
+  // A backing beat independent of which notes are active, synthesized the
+  // same way as the melodic voices (oscillators + filtered noise, no
+  // samples). Steps subdivide either the root's own bounce period (so the
+  // beat is literally derived from the same math driving the balls) or an
+  // independent BPM, selectable in the UI.
+  var drumGain = null;
+  var noiseBuffer = null;
+  function ensureNoiseBuffer() {
+    if (noiseBuffer) return noiseBuffer;
+    var length = audioCtx.sampleRate; // 1 second, reused for every hit
+    noiseBuffer = audioCtx.createBuffer(1, length, audioCtx.sampleRate);
+    var data = noiseBuffer.getChannelData(0);
+    for (var i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+    return noiseBuffer;
+  }
+
+  function playKick(now) {
+    var osc = audioCtx.createOscillator();
+    var g = audioCtx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(150, now);
+    osc.frequency.exponentialRampToValueAtTime(45, now + 0.09);
+    g.gain.setValueAtTime(0.9, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+    osc.connect(g);
+    g.connect(drumGain);
+    osc.start(now);
+    osc.stop(now + 0.24);
+  }
+
+  function playSnare(now) {
+    var noise = audioCtx.createBufferSource();
+    noise.buffer = ensureNoiseBuffer();
+    var noiseFilter = audioCtx.createBiquadFilter();
+    noiseFilter.type = "highpass";
+    noiseFilter.frequency.value = 1500;
+    var noiseGain = audioCtx.createGain();
+    noiseGain.gain.setValueAtTime(0.6, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    noise.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(drumGain);
+    noise.start(now);
+    noise.stop(now + 0.16);
+
+    var osc = audioCtx.createOscillator();
+    var g = audioCtx.createGain();
+    osc.type = "triangle";
+    osc.frequency.value = 190;
+    g.gain.setValueAtTime(0.4, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    osc.connect(g);
+    g.connect(drumGain);
+    osc.start(now);
+    osc.stop(now + 0.11);
+  }
+
+  function playHihat(now) {
+    var noise = audioCtx.createBufferSource();
+    noise.buffer = ensureNoiseBuffer();
+    var filter = audioCtx.createBiquadFilter();
+    filter.type = "highpass";
+    filter.frequency.value = 8000;
+    var g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.35, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    noise.connect(filter);
+    filter.connect(g);
+    g.connect(drumGain);
+    noise.start(now);
+    noise.stop(now + 0.06);
+  }
+
+  // A step is a 16th note; a bar is 4 beats. In "locked" mode a beat is
+  // literally the root note's own bounce period, so the beat and the
+  // melody are tied to the same number, not just running alongside it.
+  function getDrumStepDuration() {
+    if (state.drumTempoMode === "independent") return (60 / state.drumBpm) / 4;
+    // The root ball's own bounce period is one full 16-step bar, not one
+    // beat — at typical period settings that lands drums in a normal
+    // 60-160ish BPM range instead of a crawl, while still being derived
+    // directly from the same number driving the balls.
+    return state.basePeriod / 16;
+  }
+
+  function getEffectiveDrumBpm() {
+    var stepDur = getDrumStepDuration();
+    return stepDur > 0 && isFinite(stepDur) ? 60 / (stepDur * 4) : 0;
+  }
+
+  var drumLastStepIdx = -1;
+  function updateDrums() {
+    if (!state.drumsOn) return;
+    var stepDur = getDrumStepDuration();
+    if (!stepDur || !isFinite(stepDur) || stepDur <= 0) return;
+    var stepIdx = Math.floor(state.simTime / stepDur);
+    if (stepIdx === drumLastStepIdx) return;
+    drumLastStepIdx = stepIdx;
+    if (!state.soundOn || !audioCtx) return;
+    var patternStep = ((stepIdx % 16) + 16) % 16;
+    var pattern = DRUM_PATTERNS[state.drumPattern] || DRUM_PATTERNS.boombap;
+    var now = audioCtx.currentTime;
+    if (pattern.kick[patternStep]) playKick(now);
+    if (pattern.snare[patternStep]) playSnare(now);
+    if (pattern.hihat[patternStep]) playHihat(now);
   }
 
   // ---------- Canvas ----------
@@ -1576,6 +1809,7 @@
       scheduleNextAlignment();
     }
     updateCountdownDisplay();
+    if (state.playing) updateDrums();
     draw();
     requestAnimationFrame(frame);
   }
@@ -1591,6 +1825,11 @@
     params.set("v", state.voice);
     params.set("vol", Math.round(state.volume * 100));
     params.set("d", state.octaveDouble ? "1" : "0");
+    params.set("du", state.drumsOn ? "1" : "0");
+    params.set("dp", state.drumPattern);
+    params.set("dm", state.drumTempoMode);
+    params.set("db", state.drumBpm);
+    params.set("dv", Math.round(state.drumVolume * 100));
     var offsets = state.tuningSystem === "bp" ? state.activeBPOffsets
       : state.tuningSystem === "harmonic" ? state.activeHarmonics
       : state.activeOffsets;
@@ -1632,6 +1871,7 @@
 
   // ---------- init ----------
   updateScaleUIVisibility();
+  updateDrumTempoUI();
   renderNoteGrid();
   renderHarmonicGrid();
   rebuildBalls();
