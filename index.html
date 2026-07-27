@@ -358,8 +358,8 @@
         but the balls' timing had nothing to do with the notes' actual frequencies; any five
         pitches would have bounced identically. Here it's the opposite: <strong>every ball's
         bounce period is the literal reciprocal of its note's frequency ratio</strong>
-        (equal temperament, 2<sup>n/12</sup>). The geometry you watch is the pitch
-        relationship you'd hear.
+        (equal temperament, 2<sup>n/N</sup> for N steps per octave). The geometry you watch
+        is the pitch relationship you'd hear.
       </p>
     </div>
     <button class="theme-toggle" id="themeToggle" type="button">theme: auto</button>
@@ -372,6 +372,14 @@
         <label class="field-label" for="presetSelect">Scale</label>
         <select id="presetSelect"></select>
         <div class="note-grid" id="noteGrid"></div>
+        <div class="sound-row" style="margin-top:4px;">
+          <label class="switch">
+            <input type="checkbox" id="quarterToneToggle" />
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+          <span style="font-size:0.82rem; color:var(--text-muted);">quarter-tones (24 steps/octave)</span>
+        </div>
       </div>
 
       <div class="field-group">
@@ -383,6 +391,18 @@
         <div class="row-label-value">
           <span>Root frequency</span>
           <span class="val mono" id="rootFreqVal">261.6 Hz</span>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Octaves</label>
+        <div class="sound-row">
+          <label class="switch">
+            <input type="checkbox" id="octaveToggle" />
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+          <span style="font-size:0.82rem; color:var(--text-muted);">double: add one octave above + below each note</span>
         </div>
       </div>
 
@@ -403,8 +423,9 @@
             <span class="track"></span>
             <span class="thumb"></span>
           </label>
-          <span style="font-size:0.82rem; color:var(--text-muted);">play true pitch on each bounce</span>
+          <span style="font-size:0.82rem; color:var(--text-muted);">play on each bounce</span>
         </div>
+        <select id="voiceSelect" style="margin-top:2px;"></select>
         <input type="range" id="volumeSlider" min="0" max="100" step="1" value="55" />
       </div>
 
@@ -423,7 +444,7 @@
   </div>
 
   <footer class="note">
-    Ratios use 12-tone equal temperament, so most of these scales never realign exactly —
+    Ratios use equal temperament, so most of these scales never realign exactly —
     they drift in and out of phase, occasionally landing close ("near-alignment"). That drift
     is itself the honest picture: real musical intervals like a major third or a fifth are only
     close to simple whole-number ratios on a piano, not exact.
@@ -438,6 +459,8 @@
   var NOTE_NAMES = ["C","D♭","D","E♭","E","F","G♭","G","A♭","A","B♭","B"];
   var C4 = 261.6255653005986;
 
+  // Scale presets are authored in semitone units (12/octave); they're
+  // rescaled to the active step resolution (12 or 24) when applied.
   var PRESETS = [
     { id: "hirajoshi",  label: "Hirajoshi (C D E♭ G A♭)",  offsets: [0,2,3,7,8] },
     { id: "in",         label: "In scale (Japanese)",       offsets: [0,1,5,7,8] },
@@ -452,43 +475,70 @@
   var state = {
     rootNoteIndex: 0,   // C
     rootOctave: 4,
+    stepsPerOctave: 12,
     activeOffsets: PRESETS[0].offsets.slice(),
     presetId: "hirajoshi",
+    octaveDouble: false,
     basePeriod: 2.4,
     playing: true,
     soundOn: false,
+    voice: "piano",
     volume: 0.55,
     simTime: 0,
     syncCount: 0
   };
 
-  var balls = []; // {offset, freq, ratio, period, lastBounceIdx, color}
+  var balls = []; // {offset, shift, freq, ratio, period, lastBounceIdx, hue}
 
   function noteFreq(rootIdx, octave) {
     return C4 * Math.pow(2, rootIdx / 12) * Math.pow(2, octave - 4);
   }
 
-  function hueForOffset(offset) {
+  // Name a step (0..stepsPerOctave-1). At 24 steps/octave, odd steps fall
+  // between the 12 standard pitch classes, labeled with a "+" (quarter-sharp).
+  function stepName(step, stepsPerOctave) {
+    if (stepsPerOctave === 12) return NOTE_NAMES[((step % 12) + 12) % 12];
+    var s = ((step % 24) + 24) % 24;
+    var base = NOTE_NAMES[Math.floor(s / 2)];
+    return s % 2 === 0 ? base : base + "+";
+  }
+
+  function hueForOffset(step, stepsPerOctave) {
     // amber (root, low) -> teal (upper range) across an octave
-    return 34 + (offset / 11) * 150;
+    return 34 + (step / (stepsPerOctave - 1)) * 150;
   }
 
   function rebuildBalls() {
+    var stepsPerOctave = state.stepsPerOctave;
     var rootFreq = noteFreq(state.rootNoteIndex, state.rootOctave);
-    var offsets = state.activeOffsets.slice().sort(function (a, b) { return a - b; });
-    balls = offsets.map(function (offset) {
-      var ratio = Math.pow(2, offset / 12);
+    var rootIndexInSteps = state.rootNoteIndex * (stepsPerOctave / 12);
+    var baseOffsets = state.activeOffsets.slice().sort(function (a, b) { return a - b; });
+    var shifts = state.octaveDouble ? [-1, 0, 1] : [0];
+
+    var combos = [];
+    baseOffsets.forEach(function (offset) {
+      shifts.forEach(function (shift) {
+        combos.push({ offset: offset, shift: shift, total: offset + shift * stepsPerOctave });
+      });
+    });
+    combos.sort(function (a, b) { return a.total - b.total; });
+
+    balls = combos.map(function (c) {
+      var ratio = Math.pow(2, c.total / stepsPerOctave);
       var freq = rootFreq * ratio;
       var period = state.basePeriod / ratio;
-      var noteIdx = (state.rootNoteIndex + offset) % 12;
+      var absStep = rootIndexInSteps + c.total;
+      var octaveCarry = Math.floor(absStep / stepsPerOctave);
+      var pitchClassStep = ((absStep % stepsPerOctave) + stepsPerOctave) % stepsPerOctave;
       return {
-        offset: offset,
-        noteName: NOTE_NAMES[noteIdx],
+        offset: c.offset,
+        shift: c.shift,
+        noteName: stepName(pitchClassStep, stepsPerOctave) + (state.rootOctave + octaveCarry),
         freq: freq,
         ratio: ratio,
         period: period,
         lastBounceIdx: -1,
-        hue: hueForOffset(offset)
+        hue: hueForOffset(pitchClassStep, stepsPerOctave)
       };
     });
     document.getElementById("rootFreqVal").textContent = rootFreq.toFixed(1) + " Hz";
@@ -507,7 +557,8 @@
     state.presetId = presetSelect.value;
     var preset = PRESETS.filter(function (p) { return p.id === state.presetId; })[0];
     if (preset && preset.id !== "custom") {
-      state.activeOffsets = preset.offsets.slice();
+      var scale = state.stepsPerOctave / 12;
+      state.activeOffsets = preset.offsets.map(function (o) { return o * scale; });
     }
     renderNoteGrid();
     rebuildBalls();
@@ -518,24 +569,27 @@
   var noteGrid = document.getElementById("noteGrid");
   function renderNoteGrid() {
     noteGrid.innerHTML = "";
-    for (var s = 0; s < 12; s++) {
-      (function (semitone) {
-        var idx = (state.rootNoteIndex + semitone) % 12;
+    var stepsPerOctave = state.stepsPerOctave;
+    noteGrid.style.gridTemplateColumns = "repeat(" + (stepsPerOctave === 24 ? 6 : 4) + ", 1fr)";
+    var rootIndexInSteps = state.rootNoteIndex * (stepsPerOctave / 12);
+    for (var s = 0; s < stepsPerOctave; s++) {
+      (function (step) {
+        var idx = (rootIndexInSteps + step) % stepsPerOctave;
         var btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "note-btn" + (state.activeOffsets.indexOf(semitone) !== -1 ? " active" : "");
-        btn.textContent = NOTE_NAMES[idx];
+        btn.className = "note-btn" + (state.activeOffsets.indexOf(step) !== -1 ? " active" : "");
+        btn.textContent = stepName(idx, stepsPerOctave);
         if (btn.classList.contains("active")) {
-          btn.style.background = "hsl(" + hueForOffset(semitone) + " 55% 55%)";
-          btn.style.borderColor = "hsl(" + hueForOffset(semitone) + " 55% 55%)";
+          btn.style.background = "hsl(" + hueForOffset(step, stepsPerOctave) + " 55% 55%)";
+          btn.style.borderColor = "hsl(" + hueForOffset(step, stepsPerOctave) + " 55% 55%)";
         }
         btn.addEventListener("click", function () {
-          var pos = state.activeOffsets.indexOf(semitone);
+          var pos = state.activeOffsets.indexOf(step);
           if (pos !== -1) {
             if (state.activeOffsets.length <= 1) return; // keep at least one
             state.activeOffsets.splice(pos, 1);
           } else {
-            state.activeOffsets.push(semitone);
+            state.activeOffsets.push(step);
           }
           state.presetId = "custom";
           presetSelect.value = "custom";
@@ -547,6 +601,35 @@
       })(s);
     }
   }
+
+  // ---------- UI: quarter-tone toggle ----------
+  var quarterToneToggle = document.getElementById("quarterToneToggle");
+  quarterToneToggle.addEventListener("change", function () {
+    var was = state.stepsPerOctave;
+    var now = quarterToneToggle.checked ? 24 : 12;
+    if (now > was) {
+      state.activeOffsets = state.activeOffsets.map(function (o) { return o * 2; });
+    } else if (now < was) {
+      // Dropping to semitone resolution: keep only offsets that land
+      // exactly on a semitone, so the scale doesn't silently shift.
+      state.activeOffsets = state.activeOffsets
+        .filter(function (o) { return o % 2 === 0; })
+        .map(function (o) { return o / 2; });
+      if (state.activeOffsets.length === 0) state.activeOffsets = [0];
+    }
+    state.stepsPerOctave = now;
+    renderNoteGrid();
+    rebuildBalls();
+    resetSim();
+  });
+
+  // ---------- UI: octave-double toggle ----------
+  var octaveToggle = document.getElementById("octaveToggle");
+  octaveToggle.addEventListener("change", function () {
+    state.octaveDouble = octaveToggle.checked;
+    rebuildBalls();
+    resetSim();
+  });
 
   // ---------- UI: root note / octave ----------
   var rootNoteSelect = document.getElementById("rootNote");
@@ -607,6 +690,25 @@
   var masterGain = null;
   var soundToggle = document.getElementById("soundToggle");
   var volumeSlider = document.getElementById("volumeSlider");
+  var voiceSelect = document.getElementById("voiceSelect");
+
+  var VOICE_LIST = [
+    { id: "piano",     label: "Piano" },
+    { id: "violin",    label: "Violin" },
+    { id: "bassoon",   label: "Bassoon" },
+    { id: "steeldrum", label: "Steel drum" },
+    { id: "pluck",     label: "Simple pluck" }
+  ];
+  VOICE_LIST.forEach(function (v) {
+    var opt = document.createElement("option");
+    opt.value = v.id;
+    opt.textContent = v.label;
+    voiceSelect.appendChild(opt);
+  });
+  voiceSelect.value = state.voice;
+  voiceSelect.addEventListener("change", function () {
+    state.voice = voiceSelect.value;
+  });
 
   function ensureAudio() {
     if (audioCtx) return;
@@ -640,9 +742,115 @@
     if (masterGain) masterGain.gain.value = state.volume * 0.6;
   });
 
-  function pluck(freq) {
-    if (!state.soundOn || !audioCtx) return;
-    var now = audioCtx.currentTime;
+  // Every voice below is synthesized live from oscillators/filters — no
+  // sample files — so the page stays a single self-contained HTML file.
+  // None of these are trying to be a convincing recording, just distinct
+  // enough in attack/timbre/decay to tell instruments apart by ear.
+
+  function playPiano(freq, now) {
+    var g = audioCtx.createGain();
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(0.85, now + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 1.1);
+    g.connect(masterGain);
+
+    var fundamental = audioCtx.createOscillator();
+    fundamental.type = "triangle";
+    fundamental.frequency.value = freq;
+    fundamental.connect(g);
+    fundamental.start(now);
+    fundamental.stop(now + 1.15);
+
+    // slightly inharmonic upper partial, like a struck piano string
+    var harmonic = audioCtx.createOscillator();
+    harmonic.type = "sine";
+    harmonic.frequency.value = freq * 2.005;
+    var hg = audioCtx.createGain();
+    hg.gain.value = 0.16;
+    harmonic.connect(hg);
+    hg.connect(g);
+    harmonic.start(now);
+    harmonic.stop(now + 1.15);
+  }
+
+  function playViolin(freq, now) {
+    var filter = audioCtx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = Math.min(6000, freq * 6);
+    filter.Q.value = 0.7;
+    filter.connect(masterGain);
+
+    var g = audioCtx.createGain();
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(0.65, now + 0.12);
+    g.gain.linearRampToValueAtTime(0.45, now + 0.5);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.95);
+    g.connect(filter);
+
+    var osc = audioCtx.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.value = freq;
+    osc.connect(g);
+
+    // subtle vibrato, like a bowed string
+    var lfo = audioCtx.createOscillator();
+    lfo.type = "sine";
+    lfo.frequency.value = 5.5;
+    var lfoGain = audioCtx.createGain();
+    lfoGain.gain.value = freq * 0.006;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+
+    osc.start(now);
+    osc.stop(now + 1.0);
+    lfo.start(now);
+    lfo.stop(now + 1.0);
+  }
+
+  function playBassoon(freq, now) {
+    var filter = audioCtx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = freq * 2.2;
+    filter.Q.value = 3.5;
+    filter.connect(masterGain);
+
+    var g = audioCtx.createGain();
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(0.75, now + 0.05);
+    g.gain.linearRampToValueAtTime(0.5, now + 0.3);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
+    g.connect(filter);
+
+    var osc = audioCtx.createOscillator();
+    osc.type = "square";
+    osc.frequency.value = freq;
+    osc.connect(g);
+    osc.start(now);
+    osc.stop(now + 0.9);
+  }
+
+  function playSteelDrum(freq, now) {
+    var g = audioCtx.createGain();
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(0.8, now + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 1.6);
+    g.connect(masterGain);
+
+    // inharmonic sine partials, characteristic of a struck steelpan
+    [1, 2.0, 2.76, 4.05].forEach(function (mult, i) {
+      var osc = audioCtx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.value = freq * mult;
+      var pg = audioCtx.createGain();
+      pg.gain.value = [0.6, 0.32, 0.2, 0.1][i];
+      osc.connect(pg);
+      pg.connect(g);
+      osc.start(now);
+      osc.stop(now + 1.65);
+    });
+  }
+
+  function playPluck(freq, now) {
     var osc = audioCtx.createOscillator();
     var g = audioCtx.createGain();
     osc.type = "triangle";
@@ -654,6 +862,20 @@
     g.connect(masterGain);
     osc.start(now);
     osc.stop(now + 0.46);
+  }
+
+  var VOICES = {
+    piano: playPiano,
+    violin: playViolin,
+    bassoon: playBassoon,
+    steeldrum: playSteelDrum,
+    pluck: playPluck
+  };
+
+  function pluck(freq) {
+    if (!state.soundOn || !audioCtx) return;
+    var now = audioCtx.currentTime;
+    (VOICES[state.voice] || playPiano)(freq, now);
   }
 
   // ---------- Canvas ----------
@@ -714,6 +936,20 @@
     }
     var bottomReserve = [26, 40, 54, 68][detailTier];
 
+    // Octave-doubling and quarter-tones can pack in many more balls than the
+    // original 5-note scales; note names ("D♭+3") can outgrow the column
+    // even at tier 0, so size that line from measured width too rather than
+    // letting adjacent note names collide.
+    var noteFontSize = 13;
+    ctx.font = "600 " + noteFontSize + "px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    var maxNoteWidth = 0;
+    balls.forEach(function (b) {
+      maxNoteWidth = Math.max(maxNoteWidth, ctx.measureText(b.noteName).width);
+    });
+    if (maxNoteWidth + labelPad > spacing) {
+      noteFontSize = Math.max(8, Math.floor(13 * (spacing - labelPad) / maxNoteWidth));
+    }
+
     var groundY = h - bottomReserve;
     var topMargin = 24;
     var maxH = groundY - topMargin;
@@ -745,16 +981,19 @@
       ctx.lineTo(x, topMargin);
       ctx.stroke();
 
-      // ball
+      // ball — octave-doubled balls are lighter (up) or darker (down) than
+      // their base octave, so same pitch class reads as "the same note,
+      // different register" rather than an unrelated color.
+      var lightness = Math.max(30, Math.min(82, 58 + b.shift * 14));
       ctx.beginPath();
-      ctx.fillStyle = "hsl(" + b.hue + ", 62%, 58%)";
+      ctx.fillStyle = "hsl(" + b.hue + ", 62%, " + lightness + "%)";
       ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fill();
 
       // labels (fewer lines as columns get narrower, so text never overlaps)
       ctx.textAlign = "center";
       ctx.fillStyle = cssVar("--text");
-      ctx.font = "600 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+      ctx.font = "600 " + noteFontSize + "px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
       ctx.fillText(b.noteName, x, groundY + 20);
 
       if (detailTier >= 1) {
