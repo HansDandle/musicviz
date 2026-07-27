@@ -948,7 +948,11 @@
     { id: "violin",    label: "Violin" },
     { id: "bassoon",   label: "Bassoon" },
     { id: "steeldrum", label: "Steel drum" },
-    { id: "pluck",     label: "Simple pluck" }
+    { id: "pluck",     label: "Simple pluck" },
+    { id: "sine",      label: "Sine wave" },
+    { id: "triangle",  label: "Triangle wave" },
+    { id: "square",    label: "Square wave" },
+    { id: "sawtooth",  label: "Sawtooth wave" }
   ];
   VOICE_LIST.forEach(function (v) {
     var opt = document.createElement("option");
@@ -1115,12 +1119,36 @@
     osc.stop(now + 0.46);
   }
 
+  // Bare oscillator waveforms — no filtering or extra partials, just the
+  // raw shape, for a synth/electronic timbre rather than an instrument
+  // impression. Square/sawtooth are louder-feeling (more harmonic energy)
+  // than sine/triangle, so their peak gain is pulled back a bit to match.
+  function makeWaveformVoice(type, peakGain) {
+    return function (freq, now) {
+      var osc = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      g.gain.setValueAtTime(0, now);
+      g.gain.linearRampToValueAtTime(peakGain, now + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+      osc.connect(g);
+      g.connect(masterGain);
+      osc.start(now);
+      osc.stop(now + 0.51);
+    };
+  }
+
   var VOICES = {
     piano: playPiano,
     violin: playViolin,
     bassoon: playBassoon,
     steeldrum: playSteelDrum,
-    pluck: playPluck
+    pluck: playPluck,
+    sine: makeWaveformVoice("sine", 0.8),
+    triangle: makeWaveformVoice("triangle", 0.8),
+    square: makeWaveformVoice("square", 0.5),
+    sawtooth: makeWaveformVoice("sawtooth", 0.55)
   };
 
   function pluck(freq) {
