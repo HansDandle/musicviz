@@ -325,6 +325,13 @@
   }
   button.transport-btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
 
+  .stats-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 16px;
+  }
+
   .stat {
     font-size: 0.76rem;
     color: var(--text-faint);
@@ -447,7 +454,10 @@
           <button class="transport-btn primary" id="playPauseBtn" type="button">Pause</button>
           <button class="transport-btn" id="restartBtn" type="button">Restart in sync</button>
         </div>
-        <div class="stat"><span id="syncLabel">Near-alignment events</span> <span class="val mono" id="syncCount">0</span></div>
+        <div class="stats-group">
+          <div class="stat"><span id="countdownLabel">Next alignment</span> <span class="val mono" id="countdownVal">—</span></div>
+          <div class="stat"><span id="syncLabel">Near-alignment events</span> <span class="val mono" id="syncCount">0</span></div>
+        </div>
       </div>
     </main>
   </div>
@@ -473,6 +483,27 @@
   // scales built from them share an exact common period and really do
   // realign — not just drift close.
   var JI_RATIOS = [1/1, 16/15, 9/8, 6/5, 5/4, 4/3, 45/32, 3/2, 8/5, 5/3, 16/9, 15/8];
+  // Same ratios as exact [numerator, denominator] pairs, used to predict
+  // exactly when a rational-ratio scale will realign (see computeNextAlignment).
+  var JI_RATIOS_FRAC = [[1,1],[16,15],[9,8],[6,5],[5,4],[4,3],[45,32],[3,2],[8,5],[5,3],[16,9],[15,8]];
+
+  function gcdInt(a, b) {
+    a = Math.round(Math.abs(a)); b = Math.round(Math.abs(b));
+    while (b) { var t = b; b = a % b; a = t; }
+    return a || 1;
+  }
+  function lcmInt(a, b) { return Math.abs(a * b) / gcdInt(a, b); }
+
+  function jiRatioFraction(totalOffset) {
+    var octaves = Math.floor(totalOffset / 12);
+    var deg = ((totalOffset % 12) + 12) % 12;
+    var num = JI_RATIOS_FRAC[deg][0];
+    var den = JI_RATIOS_FRAC[deg][1];
+    if (octaves >= 0) num *= Math.pow(2, octaves);
+    else den *= Math.pow(2, -octaves);
+    var g = gcdInt(num, den);
+    return [num / g, den / g];
+  }
 
   // Scale presets are authored in semitone units (12/octave) and rescaled
   // to the active step resolution when applied — except unit:"quartertone"
@@ -520,7 +551,10 @@
     voice: "piano",
     volume: 0.55,
     simTime: 0,
-    syncCount: 0
+    syncCount: 0,
+    nextAlignmentTime: null,
+    alignmentFound: false,
+    alignmentApprox: false
   };
 
   var balls = []; // {offset, shift, freq, ratio, period, lastBounceIdx, hue}
@@ -562,7 +596,8 @@
         ratio: k,
         period: period,
         lastBounceIdx: -1,
-        hue: 34 + (Math.min(k, 16) - 1) / 15 * 150
+        hue: 34 + (Math.min(k, 16) - 1) / 15 * 150,
+        fracDen: 1 // ratio is k/1 exactly
       };
     });
   }
@@ -574,6 +609,7 @@
 
     if (system === "harmonic") {
       balls = buildHarmonicBalls(rootFreq);
+      scheduleNextAlignment();
       return;
     }
 
@@ -610,9 +646,146 @@
         ratio: ratio,
         period: period,
         lastBounceIdx: -1,
-        hue: hueForOffset(pitchClassStep, stepsPerOctave)
+        hue: hueForOffset(pitchClassStep, stepsPerOctave),
+        fracDen: system === "ji" ? jiRatioFraction(c.total)[1] : undefined
       };
     });
+    scheduleNextAlignment();
+  }
+
+  // ---------- Alignment prediction ----------
+  // For rational-ratio tuning (just intonation, harmonic series) the exact
+  // recurrence period is basePeriod * LCM of each ball's ratio denominator
+  // (in lowest terms) — every ball returns to phase 0 simultaneously at
+  // multiples of that period, and can't align at any other time, so this
+  // is exact, not an estimate.
+  function findExactAlignmentPeriod() {
+    if (balls.length < 2) return null;
+    var denom = 1;
+    for (var i = 0; i < balls.length; i++) {
+      if (!balls[i].fracDen) return null;
+      denom = lcmInt(denom, balls[i].fracDen);
+    }
+    var T = state.basePeriod * denom;
+    return isFinite(T) && T > 0 ? T : null;
+  }
+
+  // For irrational-ratio tuning (equal temperament, Bohlen-Pierce) exact
+  // realignment never recurs, but near-alignment does. The slowest ball
+  // only touches "ground" (phase 0) at exact multiples of its own period,
+  // so those are the only candidate times worth checking — far more
+  // precise than scanning fixed time steps, which can step right over a
+  // narrow near-ground window for a fast-bouncing ball.
+  var FLASH_TOLERANCE = 0.015; // matches the "at ground" threshold used for the visual flash
+
+  // The slowest ball is only ever within tolerance near multiples of its
+  // own period, so those are the only regions worth examining — but its
+  // own tolerance window has real width (not just the exact instant), and
+  // within that width the faster balls' phases can shift enough to matter.
+  // So each candidate is a small window, sub-sampled, not a single point —
+  // checking only the exact center measurably misses real near-alignments
+  // (verified: it missed a genuine ~9-hour recurrence in testing).
+  function findNearAlignmentBySparseSearch(fromTime, tol) {
+    if (balls.length < 2) return null;
+    var slowest = balls[0];
+    for (var i = 1; i < balls.length; i++) {
+      if (balls[i].period > slowest.period) slowest = balls[i];
+    }
+    var startM = Math.floor(fromTime / slowest.period) + 1;
+    var maxM = startM + 20000;
+    var halfWindow = (tol / Math.PI) * slowest.period * 1.5;
+    var subSamples = 15;
+    for (var m = startM; m <= maxM; m++) {
+      var center = m * slowest.period;
+      for (var s = 0; s < subSamples; s++) {
+        var t = center - halfWindow + (2 * halfWindow) * (s / (subSamples - 1));
+        if (t <= fromTime) continue;
+        var maxDev = 0;
+        for (var j = 0; j < balls.length; j++) {
+          var period = balls[j].period;
+          var phase = (t % period) / period;
+          var dev = Math.abs(Math.sin(Math.PI * phase));
+          if (dev > maxDev) {
+            maxDev = dev;
+            if (maxDev >= tol) break;
+          }
+        }
+        if (maxDev < tol) return t;
+      }
+    }
+    return null;
+  }
+
+  // Returns { time, approx }. tol=FLASH_TOLERANCE is tried first, matching
+  // exactly when the visual flash would fire. Some scales genuinely have no
+  // such moment within the search bound (a real, honest result — equal
+  // temperament ratios are irrational, so recurrence isn't guaranteed at
+  // all) — for those, fall back to a looser tolerance so the countdown
+  // still shows something useful, clearly marked as approximate rather
+  // than tied to the flash.
+  function computeNextAlignment(fromTime) {
+    if (balls.length < 2) return null;
+    if (state.tuningSystem === "ji" || state.tuningSystem === "harmonic") {
+      var T = findExactAlignmentPeriod();
+      if (!T) return null;
+      var k = Math.floor(fromTime / T + 1e-9) + 1;
+      return { time: k * T, approx: false };
+    }
+    var exact = findNearAlignmentBySparseSearch(fromTime, FLASH_TOLERANCE);
+    if (exact !== null) return { time: exact, approx: false };
+    var loose = findNearAlignmentBySparseSearch(fromTime, 0.06);
+    if (loose !== null) return { time: loose, approx: true };
+    return null;
+  }
+
+  function scheduleNextAlignment() {
+    if (balls.length < 2) {
+      state.nextAlignmentTime = null;
+      state.alignmentFound = false;
+      updateCountdownDisplay();
+      return;
+    }
+    var result = computeNextAlignment(state.simTime);
+    if (result === null) {
+      // Nothing found within the search bound even at the loosened
+      // tolerance — retry later rather than re-running the search every
+      // frame. This can legitimately happen: equal-tempered ratios are
+      // irrational, so recurrence isn't guaranteed within any bound.
+      var slowest = balls[0];
+      for (var i = 1; i < balls.length; i++) {
+        if (balls[i].period > slowest.period) slowest = balls[i];
+      }
+      state.nextAlignmentTime = state.simTime + slowest.period * 20000;
+      state.alignmentFound = false;
+      state.alignmentApprox = false;
+    } else {
+      state.nextAlignmentTime = result.time;
+      state.alignmentFound = true;
+      state.alignmentApprox = result.approx;
+    }
+    updateCountdownDisplay();
+  }
+
+  function formatDuration(seconds) {
+    if (seconds < 60) return seconds.toFixed(1) + "s";
+    if (seconds < 3600) return (seconds / 60).toFixed(1) + "m";
+    if (seconds < 86400) return (seconds / 3600).toFixed(1) + "h";
+    return (seconds / 86400).toFixed(1) + "d";
+  }
+
+  function updateCountdownDisplay() {
+    var el = document.getElementById("countdownVal");
+    if (!el) return;
+    if (balls.length < 2 || !state.alignmentFound || state.nextAlignmentTime === null) {
+      el.textContent = "—";
+      el.title = "No predicted alignment within the search window — try more octaves, fewer notes, or a rational tuning (just intonation / harmonic series).";
+      return;
+    }
+    var remaining = Math.max(0, state.nextAlignmentTime - state.simTime);
+    el.textContent = (state.alignmentApprox ? "~" : "") + formatDuration(remaining);
+    el.title = state.alignmentApprox
+      ? "Approximate — no near-exact match found, so this uses a looser tolerance than the visual flash."
+      : "";
   }
 
   // ---------- UI: tuning system ----------
@@ -880,6 +1053,10 @@
     document.getElementById("scaleGroup").style.display = system === "harmonic" ? "none" : "";
     document.getElementById("harmonicGroup").style.display = system === "harmonic" ? "" : "none";
     document.getElementById("quarterToneRow").style.display = system === "et" ? "" : "none";
+    // Presets are authored in semitone/quarter-tone units and don't apply
+    // to Bohlen-Pierce's 13-step tritave grid, so hide the picker rather
+    // than leave a preset name showing that has no effect there.
+    document.getElementById("presetSelect").style.display = system === "bp" ? "none" : "";
 
     var showRootNote = system === "et" || system === "ji";
     rootNoteSelect.style.display = showRootNote ? "" : "none";
@@ -893,6 +1070,7 @@
 
     var exactSync = system === "ji" || system === "harmonic";
     document.getElementById("syncLabel").textContent = exactSync ? "Alignment events" : "Near-alignment events";
+    document.getElementById("countdownLabel").textContent = exactSync ? "Next alignment" : "Predicted alignment";
 
     var footerNote = document.getElementById("tuningFooterNote");
     if (exactSync) {
@@ -933,6 +1111,7 @@
     state.syncCount = 0;
     document.getElementById("syncCount").textContent = "0";
     balls.forEach(function (b) { b.lastBounceIdx = -1; });
+    scheduleNextAlignment();
   }
   document.getElementById("restartBtn").addEventListener("click", resetSim);
 
@@ -1317,6 +1496,10 @@
     var dt = (ts - lastTs) / 1000;
     lastTs = ts;
     if (state.playing) state.simTime += dt;
+    if (state.nextAlignmentTime !== null && state.simTime >= state.nextAlignmentTime - 1e-6) {
+      scheduleNextAlignment();
+    }
+    updateCountdownDisplay();
     draw();
     requestAnimationFrame(frame);
   }
