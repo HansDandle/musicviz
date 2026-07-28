@@ -436,11 +436,27 @@
       </div>
 
       <div class="field-group" id="arithmeticGroup">
-        <label class="field-label" for="arithmeticStepSelect">Ball-to-ball offset</label>
-        <select id="arithmeticStepSelect"></select>
-        <div class="row-label-value">
-          <span>Offset per ball</span>
-          <span class="val mono" id="arithmeticStepVal">— ms</span>
+        <label class="field-label" for="spacingModelSelect">Ball spacing</label>
+        <select id="spacingModelSelect">
+          <option value="constant">Constant offset</option>
+          <option value="harmonic">Harmonic (real pendulum wave)</option>
+        </select>
+        <div id="constantSpacingRow">
+          <select id="arithmeticStepSelect" style="margin-top:6px;"></select>
+          <div class="row-label-value">
+            <span>Offset per ball</span>
+            <span class="val mono" id="arithmeticStepVal">— ms</span>
+          </div>
+        </div>
+        <div id="harmonicSpacingRow">
+          <div class="row-label-value">
+            <span>Swings per cycle</span>
+            <span class="val mono" id="harmonicRangeVal">—</span>
+          </div>
+          <div class="row-label-value">
+            <span>Realigns every</span>
+            <span class="val mono" id="harmonicCycleVal">— s</span>
+          </div>
         </div>
       </div>
 
@@ -625,6 +641,7 @@
     activeOffsets: PRESETS[0].offsets.slice(),
     presetId: "majpent",
     arithmeticStepId: "32nd",
+    spacingModel: "harmonic", // 'constant' | 'harmonic'
     activeBPOffsets: [0,1,2,3,4,5,6,7,8,9,10,11,12],
     activeHarmonics: HARMONIC_PRESETS[0].harmonics.slice(),
     harmonicPresetId: "h1_6",
@@ -710,6 +727,9 @@
     var as = params.get("as");
     if (as && ARITHMETIC_STEP_OPTIONS.some(function (o) { return o.id === as; })) state.arithmeticStepId = as;
 
+    var sm = params.get("sm");
+    if (sm === "constant" || sm === "harmonic") state.spacingModel = sm;
+
     var n = params.get("n");
     if (n) {
       var arr = n.split(",").map(Number).filter(function (x) { return !isNaN(x) && isFinite(x); });
@@ -773,6 +793,39 @@
     });
   }
 
+  // Real pendulum-wave construction: every ball completes a whole number of
+  // swings within one shared cycle, using consecutive integers k0, k0+1,
+  // k0+2... That's what guarantees the exact "chaos collapses into unison"
+  // snap-back — at the end of the cycle every ball has completed an integer
+  // number of swings simultaneously, by construction. Unlike the Harmonic
+  // series tuning mode, the harmonic number here drives ONLY the timing;
+  // pitch still comes from the selected scale, so slow balls aren't forced
+  // to be the low-pitched ones.
+  function harmonicStartForBallCount(n) {
+    // Larger k0 = tighter band of periods = more wave-like, but a longer
+    // wait for the realignment (cycle = k0 root periods). The real 15-
+    // pendulum demos sit around k0=51; scaling with ball count keeps the
+    // band readable while realigning within a watchable time on screen.
+    return Math.max(3, n);
+  }
+
+  function applyHarmonicPendulumSpacing() {
+    var n = balls.length;
+    if (!n) return;
+    var k0 = harmonicStartForBallCount(n);
+    // Slowest ball keeps the root period, so cycle = basePeriod * k0.
+    var cycleTime = state.basePeriod * k0;
+    balls.forEach(function (b, i) {
+      var k = k0 + i;
+      b.period = cycleTime / k;
+      // period = basePeriod * k0/k, so ratio = k/k0; the alignment predictor
+      // needs that fraction's denominator in lowest terms.
+      b.fracDen = k0 / gcdInt(k, k0);
+    });
+    document.getElementById("harmonicRangeVal").textContent = k0 + "–" + (k0 + n - 1);
+    document.getElementById("harmonicCycleVal").textContent = formatDuration(cycleTime);
+  }
+
   function rebuildBalls() {
     var system = state.tuningSystem;
     var rootFreq = noteFreq(state.rootNoteIndex, state.rootOctave);
@@ -826,22 +879,27 @@
       // balls are already sorted lowest pitch first (see combos.sort above);
       // period is now purely rank-based, decoupled from ratio/freq, which
       // are kept as-is above for the note's pitch, color, and Hz label.
-      var stepOption = ARITHMETIC_STEP_OPTIONS.filter(function (o) { return o.id === state.arithmeticStepId; })[0]
-        || ARITHMETIC_STEP_OPTIONS[0];
-      var unitStep = getDrumStepDuration();
-      var requestedStep = unitStep * stepOption.multiplier;
-      var minPeriod = 0.05;
-      // If the requested step is too large for this many balls to fit above
-      // minPeriod, compress the step itself rather than clamping individual
-      // balls — clamping a subset to the same floor collapses them onto an
-      // identical period, which breaks the "evenly staggered" pendulum-wave
-      // shape this mode exists to show.
-      var maxStepForBallCount = balls.length > 1 ? (state.basePeriod - minPeriod) / (balls.length - 1) : requestedStep;
-      var arithmeticStep = Math.min(requestedStep, maxStepForBallCount);
-      balls.forEach(function (b, i) {
-        b.period = state.basePeriod - i * arithmeticStep;
-      });
-      updateArithmeticStepDisplay(arithmeticStep, arithmeticStep < requestedStep - 1e-9);
+      if (state.spacingModel === "harmonic") {
+        applyHarmonicPendulumSpacing();
+      } else {
+        var stepOption = ARITHMETIC_STEP_OPTIONS.filter(function (o) { return o.id === state.arithmeticStepId; })[0]
+          || ARITHMETIC_STEP_OPTIONS[0];
+        var unitStep = getDrumStepDuration();
+        var requestedStep = unitStep * stepOption.multiplier;
+        var minPeriod = 0.05;
+        // If the requested step is too large for this many balls to fit above
+        // minPeriod, compress the step itself rather than clamping individual
+        // balls — clamping a subset to the same floor collapses them onto an
+        // identical period, which breaks the "evenly staggered" pendulum-wave
+        // shape this mode exists to show.
+        var maxStepForBallCount = balls.length > 1 ? (state.basePeriod - minPeriod) / (balls.length - 1) : requestedStep;
+        var arithmeticStep = Math.min(requestedStep, maxStepForBallCount);
+        balls.forEach(function (b, i) {
+          b.period = state.basePeriod - i * arithmeticStep;
+          b.fracDen = undefined;
+        });
+        updateArithmeticStepDisplay(arithmeticStep, arithmeticStep < requestedStep - 1e-9);
+      }
     }
 
     scheduleNextAlignment();
@@ -853,6 +911,14 @@
   // (in lowest terms) — every ball returns to phase 0 simultaneously at
   // multiples of that period, and can't align at any other time, so this
   // is exact, not an estimate.
+  // True when every ball's period is a rational multiple of a common base,
+  // which makes the recurrence exactly predictable instead of a search.
+  function usesExactRationalRatios() {
+    var s = state.tuningSystem;
+    if (s === "ji" || s === "harmonic") return true;
+    return s === "arithmetic" && state.spacingModel === "harmonic";
+  }
+
   function findExactAlignmentPeriod() {
     if (balls.length < 2) return null;
     var denom = 1;
@@ -919,7 +985,7 @@
   // than tied to the flash.
   function computeNextAlignment(fromTime) {
     if (balls.length < 2) return null;
-    if (state.tuningSystem === "ji" || state.tuningSystem === "harmonic") {
+    if (usesExactRationalRatios()) {
       var T = findExactAlignmentPeriod();
       if (!T) return null;
       var k = Math.floor(fromTime / T + 1e-9) + 1;
@@ -1242,18 +1308,25 @@
       + 'into 13 steps instead of a 2:1 octave into 12). Pick which steps are active, add tritaves, '
       + 'and listen with different instrument voices.',
     arithmetic: 'Each ball’s bounce period <strong>isn’t derived from pitch at all here</strong> — '
-      + 'it’s a plain arithmetic sequence, one note-duration longer per ball, the way a classic '
-      + 'pendulum-wave demonstration is actually built. The pitch you hear still follows the scale; '
-      + 'only the rhythm doesn’t.'
+      + 'it’s a plain arithmetic sequence, one note-duration longer per ball. The pitch you hear still '
+      + 'follows the scale; only the rhythm doesn’t.',
+    arithmeticHarmonic: 'Built the way a real pendulum wave is: <strong>each ball completes a whole '
+      + 'number of swings within one shared cycle</strong> (consecutive integers), so they collapse back '
+      + 'into unison exactly, on schedule. The pitch you hear still follows the scale — the note names are '
+      + 'painted on top, unrelated to the timing.'
   };
 
   function updateScaleUIVisibility() {
     var system = state.tuningSystem;
-    document.getElementById("subtitleText").innerHTML = SUBTITLE_HTML[system] || SUBTITLE_HTML.et;
+    var subtitleKey = (system === "arithmetic" && state.spacingModel === "harmonic")
+      ? "arithmeticHarmonic" : system;
+    document.getElementById("subtitleText").innerHTML = SUBTITLE_HTML[subtitleKey] || SUBTITLE_HTML.et;
     document.getElementById("scaleGroup").style.display = system === "harmonic" ? "none" : "";
     document.getElementById("harmonicGroup").style.display = system === "harmonic" ? "" : "none";
     document.getElementById("quarterToneRow").style.display = (system === "et" || system === "arithmetic") ? "" : "none";
     document.getElementById("arithmeticGroup").style.display = system === "arithmetic" ? "" : "none";
+    document.getElementById("constantSpacingRow").style.display = state.spacingModel === "constant" ? "" : "none";
+    document.getElementById("harmonicSpacingRow").style.display = state.spacingModel === "harmonic" ? "" : "none";
     // Presets are authored in semitone/quarter-tone units and don't apply
     // to Bohlen-Pierce's 13-step tritave grid, so hide the picker rather
     // than leave a preset name showing that has no effect there.
@@ -1269,16 +1342,21 @@
       ? "triple: add one tritave above + below each note"
       : "double: add one octave above + below each note";
 
-    var exactSync = system === "ji" || system === "harmonic";
+    var exactSync = usesExactRationalRatios();
     document.getElementById("syncLabel").textContent = exactSync ? "Alignment events" : "Near-alignment events";
     document.getElementById("countdownLabel").textContent = exactSync ? "Next alignment" : "Predicted alignment";
 
     var footerNote = document.getElementById("tuningFooterNote");
-    if (system === "arithmetic") {
+    if (system === "arithmetic" && state.spacingModel === "harmonic") {
+      footerNote.textContent = "How a real pendulum-wave apparatus is actually built: each ball completes a "
+        + "whole number of swings within one shared cycle, using consecutive integers. That's what makes the "
+        + "collapse back into unison exact and repeatable — and the note names are just painted on top, "
+        + "unrelated to the timing. This is the most likely construction behind clips like the original.";
+    } else if (system === "arithmetic") {
       footerNote.textContent = "This models a different theory of how a clip like the original might actually "
         + "be built: not locked to any scale at all, just balls with an evenly staggered period — a generic "
-        + "\"pendulum wave\" effect (the same idea behind the classic multi-pendulum physics demo), with notes "
-        + "assigned afterward for color and sound, unrelated to the timing.";
+        + "\"pendulum wave\" effect, with notes assigned afterward for color and sound, unrelated to the timing. "
+        + "A constant offset only approximates a real pendulum wave; the harmonic option above is the exact form.";
     } else if (exactSync) {
       footerNote.textContent = "Ratios here are rational (small-integer fractions), so this scale really "
         + "does realign exactly on a regular cycle — not just drift close, the way equal temperament does.";
@@ -1307,6 +1385,15 @@
   periodVal.textContent = state.basePeriod.toFixed(2) + " s";
 
   // ---------- UI: arithmetic (pendulum wave) step ----------
+  var spacingModelSelect = document.getElementById("spacingModelSelect");
+  spacingModelSelect.value = state.spacingModel;
+  spacingModelSelect.addEventListener("change", function () {
+    state.spacingModel = spacingModelSelect.value;
+    updateScaleUIVisibility();
+    rebuildBalls();
+    resetSim();
+  });
+
   var arithmeticStepSelect = document.getElementById("arithmeticStepSelect");
   ARITHMETIC_STEP_OPTIONS.forEach(function (o) {
     var opt = document.createElement("option");
@@ -1915,6 +2002,7 @@
     params.set("db", state.drumBpm);
     params.set("dv", Math.round(state.drumVolume * 100));
     params.set("as", state.arithmeticStepId);
+    params.set("sm", state.spacingModel);
     var offsets = state.tuningSystem === "bp" ? state.activeBPOffsets
       : state.tuningSystem === "harmonic" ? state.activeHarmonics
       : state.activeOffsets;
