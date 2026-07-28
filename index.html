@@ -470,6 +470,10 @@
           </label>
           <span style="font-size:0.82rem; color:var(--text-muted);">play on each bounce</span>
         </div>
+        <p id="iosSilentHint" style="display:none; margin:2px 0 0; font-size:0.75rem; line-height:1.45; color:var(--text-faint);">
+          No sound on iPhone? Check the silent switch on the side of the phone — iOS mutes
+          web audio when it's flipped on.
+        </p>
         <select id="voiceSelect" style="margin-top:2px;"></select>
         <input type="range" id="volumeSlider" min="0" max="100" step="1" value="55" />
       </div>
@@ -1463,6 +1467,14 @@
 
   function ensureAudio() {
     if (audioCtx) return;
+    // On iOS, Web Audio is treated as "ambient" sound by default, which the
+    // hardware ringer/silent switch mutes outright — so an iPhone with the
+    // switch flipped hears nothing at all while an identical phone without
+    // it works fine. Declaring the session as "playback" opts into the
+    // media category that ignores the silent switch (Safari 16.4+).
+    if (navigator.audioSession) {
+      try { navigator.audioSession.type = "playback"; } catch (e) { /* not settable */ }
+    }
     var Ctx = window.AudioContext || window.webkitAudioContext;
     audioCtx = new Ctx();
     masterGain = audioCtx.createGain();
@@ -1471,11 +1483,18 @@
     drumGain = audioCtx.createGain();
     drumGain.gain.value = state.drumVolume * 0.7;
     drumGain.connect(audioCtx.destination);
+    // iOS can also drop the context into "interrupted" (incoming call, app
+    // switch, Siri) and it does not recover on its own.
+    audioCtx.addEventListener("statechange", function () {
+      if (audioCtx.state !== "running" && state.soundOn) audioCtx.resume();
+    });
   }
 
   function unlockAudio() {
     ensureAudio();
-    if (audioCtx.state === "suspended") audioCtx.resume();
+    // "interrupted" is iOS-only and needs the same resume() treatment as
+    // "suspended"; checking only for "suspended" leaves it stuck silent.
+    if (audioCtx.state !== "running") audioCtx.resume();
   }
 
   // Mobile browsers (especially iOS Safari) only unlock a new/suspended
@@ -1487,9 +1506,19 @@
     document.addEventListener(evt, unlockAudio, { passive: true });
   });
 
+  // iPadOS reports itself as a Mac, so check for touch support alongside the
+  // platform string to catch it too.
+  var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
   soundToggle.addEventListener("change", function () {
     state.soundOn = soundToggle.checked;
     if (state.soundOn) unlockAudio();
+    // Only surface the silent-switch hint on iOS, and only once the user has
+    // actually asked for sound — it's noise for anyone else.
+    if (isIOS) {
+      document.getElementById("iosSilentHint").style.display = state.soundOn ? "" : "none";
+    }
   });
   volumeSlider.value = String(Math.round(state.volume * 100));
   volumeSlider.addEventListener("input", function () {
