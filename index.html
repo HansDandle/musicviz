@@ -378,6 +378,7 @@
           <option value="ji">Just intonation</option>
           <option value="harmonic">Harmonic series</option>
           <option value="bp">Bohlen-Pierce (tritave)</option>
+          <option value="arithmetic">Arithmetic (pendulum wave)</option>
         </select>
       </div>
 
@@ -431,6 +432,15 @@
         <div class="row-label-value">
           <span>Period at root</span>
           <span class="val mono" id="periodVal">2.40 s</span>
+        </div>
+      </div>
+
+      <div class="field-group" id="arithmeticGroup">
+        <label class="field-label" for="arithmeticStepSelect">Ball-to-ball offset</label>
+        <select id="arithmeticStepSelect"></select>
+        <div class="row-label-value">
+          <span>Offset per ball</span>
+          <span class="val mono" id="arithmeticStepVal">— ms</span>
         </div>
       </div>
 
@@ -594,13 +604,27 @@
   };
   var DRUM_PATTERN_IDS = ["boombap", "trap", "fourfloor", "halftime"];
 
+  // "Arithmetic" tuning: ball periods aren't derived from pitch at all —
+  // each ball's period is a constant note-duration shorter than the next
+  // (a classic pendulum-wave spacing), reusing the drum tempo's 16th-note
+  // step as the unit. Pitch/hue/labels still come from the selected scale;
+  // only the bounce rhythm is decoupled from it.
+  var ARITHMETIC_STEP_OPTIONS = [
+    { id: "32nd",    label: "1/32 note", multiplier: 0.5 },
+    { id: "16th",    label: "1/16 note", multiplier: 1 },
+    { id: "8th",     label: "1/8 note",  multiplier: 2 },
+    { id: "quarter", label: "1/4 note",  multiplier: 4 },
+    { id: "half",    label: "1/2 note",  multiplier: 8 }
+  ];
+
   var state = {
-    tuningSystem: "et",   // 'et' | 'ji' | 'harmonic' | 'bp'
+    tuningSystem: "et",   // 'et' | 'ji' | 'harmonic' | 'bp' | 'arithmetic'
     rootNoteIndex: 0,     // C
     rootOctave: 4,
     stepsPerOctave: 12,
     activeOffsets: PRESETS[0].offsets.slice(),
     presetId: "majpent",
+    arithmeticStepId: "32nd",
     activeBPOffsets: [0,1,2,3,4,5,6,7,8,9,10,11,12],
     activeHarmonics: HARMONIC_PRESETS[0].harmonics.slice(),
     harmonicPresetId: "h1_6",
@@ -651,7 +675,7 @@
     if (!params.has("t") && !params.has("n")) return;
 
     var t = params.get("t");
-    if (["et", "ji", "harmonic", "bp"].indexOf(t) !== -1) state.tuningSystem = t;
+    if (["et", "ji", "harmonic", "bp", "arithmetic"].indexOf(t) !== -1) state.tuningSystem = t;
 
     var r = parseInt(params.get("r"), 10);
     if (!isNaN(r) && r >= 0 && r <= 11) state.rootNoteIndex = r;
@@ -682,6 +706,9 @@
     if (!isNaN(db) && db >= 60 && db <= 160) state.drumBpm = db;
     var dv = parseInt(params.get("dv"), 10);
     if (!isNaN(dv)) state.drumVolume = Math.max(0, Math.min(100, dv)) / 100;
+
+    var as = params.get("as");
+    if (as && ARITHMETIC_STEP_OPTIONS.some(function (o) { return o.id === as; })) state.arithmeticStepId = as;
 
     var n = params.get("n");
     if (n) {
@@ -794,6 +821,22 @@
         fracDen: system === "ji" ? jiRatioFraction(c.total)[1] : undefined
       };
     });
+
+    if (system === "arithmetic") {
+      // balls are already sorted lowest pitch first (see combos.sort above);
+      // period is now purely rank-based, decoupled from ratio/freq, which
+      // are kept as-is above for the note's pitch, color, and Hz label.
+      var stepOption = ARITHMETIC_STEP_OPTIONS.filter(function (o) { return o.id === state.arithmeticStepId; })[0]
+        || ARITHMETIC_STEP_OPTIONS[0];
+      var unitStep = getDrumStepDuration();
+      var arithmeticStep = unitStep * stepOption.multiplier;
+      var minPeriod = 0.05;
+      balls.forEach(function (b, i) {
+        b.period = Math.max(minPeriod, state.basePeriod - i * arithmeticStep);
+      });
+      updateArithmeticStepDisplay(arithmeticStep);
+    }
+
     scheduleNextAlignment();
   }
 
@@ -1190,7 +1233,11 @@
     bp: 'Each ball’s bounce period is <strong>the literal reciprocal of its note’s frequency '
       + 'ratio</strong> (Bohlen-Pierce equal temperament, 3<sup>n/13</sup> — a 3:1 tritave split '
       + 'into 13 steps instead of a 2:1 octave into 12). Pick which steps are active, add tritaves, '
-      + 'and listen with different instrument voices.'
+      + 'and listen with different instrument voices.',
+    arithmetic: 'Each ball’s bounce period <strong>isn’t derived from pitch at all here</strong> — '
+      + 'it’s a plain arithmetic sequence, one note-duration longer per ball, the way a classic '
+      + 'pendulum-wave demonstration is actually built. The pitch you hear still follows the scale; '
+      + 'only the rhythm doesn’t.'
   };
 
   function updateScaleUIVisibility() {
@@ -1198,13 +1245,14 @@
     document.getElementById("subtitleText").innerHTML = SUBTITLE_HTML[system] || SUBTITLE_HTML.et;
     document.getElementById("scaleGroup").style.display = system === "harmonic" ? "none" : "";
     document.getElementById("harmonicGroup").style.display = system === "harmonic" ? "" : "none";
-    document.getElementById("quarterToneRow").style.display = system === "et" ? "" : "none";
+    document.getElementById("quarterToneRow").style.display = (system === "et" || system === "arithmetic") ? "" : "none";
+    document.getElementById("arithmeticGroup").style.display = system === "arithmetic" ? "" : "none";
     // Presets are authored in semitone/quarter-tone units and don't apply
     // to Bohlen-Pierce's 13-step tritave grid, so hide the picker rather
     // than leave a preset name showing that has no effect there.
     document.getElementById("presetSelect").style.display = system === "bp" ? "none" : "";
 
-    var showRootNote = system === "et" || system === "ji";
+    var showRootNote = system === "et" || system === "ji" || system === "arithmetic";
     rootNoteSelect.style.display = showRootNote ? "" : "none";
     document.getElementById("rootNoteOctaveRow").style.gridTemplateColumns = showRootNote ? "1fr 1fr" : "1fr";
 
@@ -1219,7 +1267,12 @@
     document.getElementById("countdownLabel").textContent = exactSync ? "Next alignment" : "Predicted alignment";
 
     var footerNote = document.getElementById("tuningFooterNote");
-    if (exactSync) {
+    if (system === "arithmetic") {
+      footerNote.textContent = "This models a different theory of how a clip like the original might actually "
+        + "be built: not locked to any scale at all, just balls with an evenly staggered period — a generic "
+        + "\"pendulum wave\" effect (the same idea behind the classic multi-pendulum physics demo), with notes "
+        + "assigned afterward for color and sound, unrelated to the timing.";
+    } else if (exactSync) {
       footerNote.textContent = "Ratios here are rational (small-integer fractions), so this scale really "
         + "does realign exactly on a regular cycle — not just drift close, the way equal temperament does.";
     } else if (system === "bp") {
@@ -1245,6 +1298,24 @@
     if (state.drumTempoMode === "locked") updateDrumBpmDisplay();
   });
   periodVal.textContent = state.basePeriod.toFixed(2) + " s";
+
+  // ---------- UI: arithmetic (pendulum wave) step ----------
+  var arithmeticStepSelect = document.getElementById("arithmeticStepSelect");
+  ARITHMETIC_STEP_OPTIONS.forEach(function (o) {
+    var opt = document.createElement("option");
+    opt.value = o.id;
+    opt.textContent = o.label;
+    arithmeticStepSelect.appendChild(opt);
+  });
+  arithmeticStepSelect.value = state.arithmeticStepId;
+  arithmeticStepSelect.addEventListener("change", function () {
+    state.arithmeticStepId = arithmeticStepSelect.value;
+    rebuildBalls();
+    resetSim();
+  });
+  function updateArithmeticStepDisplay(stepSeconds) {
+    document.getElementById("arithmeticStepVal").textContent = Math.round(stepSeconds * 1000) + " ms";
+  }
 
   // ---------- UI: transport ----------
   var playPauseBtn = document.getElementById("playPauseBtn");
@@ -1353,6 +1424,7 @@
   drumTempoModeSelect.addEventListener("change", function () {
     state.drumTempoMode = drumTempoModeSelect.value;
     updateDrumTempoUI();
+    if (state.tuningSystem === "arithmetic") rebuildBalls();
   });
 
   var drumBpmSlider = document.getElementById("drumBpmSlider");
@@ -1360,6 +1432,7 @@
   drumBpmSlider.addEventListener("input", function () {
     state.drumBpm = parseInt(drumBpmSlider.value, 10);
     updateDrumBpmDisplay();
+    if (state.tuningSystem === "arithmetic") rebuildBalls();
   });
 
   var drumVolumeSlider = document.getElementById("drumVolumeSlider");
@@ -1830,6 +1903,7 @@
     params.set("dm", state.drumTempoMode);
     params.set("db", state.drumBpm);
     params.set("dv", Math.round(state.drumVolume * 100));
+    params.set("as", state.arithmeticStepId);
     var offsets = state.tuningSystem === "bp" ? state.activeBPOffsets
       : state.tuningSystem === "harmonic" ? state.activeHarmonics
       : state.activeOffsets;
