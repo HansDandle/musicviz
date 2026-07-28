@@ -829,12 +829,19 @@
       var stepOption = ARITHMETIC_STEP_OPTIONS.filter(function (o) { return o.id === state.arithmeticStepId; })[0]
         || ARITHMETIC_STEP_OPTIONS[0];
       var unitStep = getDrumStepDuration();
-      var arithmeticStep = unitStep * stepOption.multiplier;
+      var requestedStep = unitStep * stepOption.multiplier;
       var minPeriod = 0.05;
+      // If the requested step is too large for this many balls to fit above
+      // minPeriod, compress the step itself rather than clamping individual
+      // balls — clamping a subset to the same floor collapses them onto an
+      // identical period, which breaks the "evenly staggered" pendulum-wave
+      // shape this mode exists to show.
+      var maxStepForBallCount = balls.length > 1 ? (state.basePeriod - minPeriod) / (balls.length - 1) : requestedStep;
+      var arithmeticStep = Math.min(requestedStep, maxStepForBallCount);
       balls.forEach(function (b, i) {
-        b.period = Math.max(minPeriod, state.basePeriod - i * arithmeticStep);
+        b.period = state.basePeriod - i * arithmeticStep;
       });
-      updateArithmeticStepDisplay(arithmeticStep);
+      updateArithmeticStepDisplay(arithmeticStep, arithmeticStep < requestedStep - 1e-9);
     }
 
     scheduleNextAlignment();
@@ -1313,8 +1320,12 @@
     rebuildBalls();
     resetSim();
   });
-  function updateArithmeticStepDisplay(stepSeconds) {
-    document.getElementById("arithmeticStepVal").textContent = Math.round(stepSeconds * 1000) + " ms";
+  function updateArithmeticStepDisplay(stepSeconds, compressed) {
+    var el = document.getElementById("arithmeticStepVal");
+    el.textContent = (compressed ? "~" : "") + Math.round(stepSeconds * 1000) + " ms";
+    el.title = compressed
+      ? "Compressed from the selected note duration — that many balls don't fit spaced any wider within the root period. Raise the root bounce period, remove notes, or pick a smaller note duration."
+      : "";
   }
 
   // ---------- UI: transport ----------
