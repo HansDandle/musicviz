@@ -472,6 +472,42 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
 
+  .level-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .level-tag {
+    font-size: 0.6rem;
+    color: var(--text-faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .level-bar {
+    position: relative;
+    flex: 1;
+    height: 7px;
+    background: var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .level-fill {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 0%;
+    background: var(--accent2-strong);
+    border-radius: 999px;
+    transition: width 70ms linear;
+  }
+  .level-gate {
+    position: absolute;
+    top: -2px; bottom: -2px;
+    width: 2px;
+    left: 30%;
+    background: var(--accent-strong);
+  }
+
   .game-legend {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
@@ -684,7 +720,8 @@
           <span class="field-label">Input</span>
           <button class="mic-btn" id="micBtn" type="button">Enable microphone</button>
           <p class="mic-status" id="micStatus">
-            Sing, hum, or whistle the note on each hurdle. Headphones recommended —
+            Your pitch is the ball's altitude: sing higher, it rides higher. Line
+            it up with each wall's hole to pass through. Headphones recommended —
             speakers let the game hear itself.
           </p>
         </div>
@@ -699,7 +736,23 @@
               <div class="needle" id="centsNeedle"></div>
             </div>
             <div class="cents-label"><span>−50¢</span><span id="centsVal">flat / sharp</span><span>+50¢</span></div>
+            <div class="level-row">
+              <span class="level-tag">in</span>
+              <div class="level-bar">
+                <div class="level-fill" id="levelFill"></div>
+                <div class="level-gate" id="levelGate"></div>
+              </div>
+            </div>
           </div>
+          <div class="row-label-value" style="margin-top:10px;">
+            <span>Mic sensitivity</span>
+            <span class="val mono" id="sensVal">normal</span>
+          </div>
+          <input type="range" id="sensSlider" min="1" max="12" step="1" value="5" />
+          <p class="mic-status" style="margin:0;">
+            The green bar is your input; the notch is the cut-off. If singing
+            normally does not push the bar past the notch, raise this.
+          </p>
         </div>
 
         <div class="field-group">
@@ -713,7 +766,7 @@
         </div>
 
         <div class="field-group">
-          <label class="field-label" for="difficultySelect">Pitch tolerance</label>
+          <label class="field-label" for="difficultySelect">Pitch tolerance — sets hole size</label>
           <select id="difficultySelect">
             <option value="80">Forgiving — ±80 cents</option>
             <option value="50" selected>Normal — ±50 cents</option>
@@ -728,7 +781,7 @@
             <span style="font-size:0.78rem; color:var(--text-muted);">Any octave counts</span>
           </div>
           <div class="row-label-value" style="margin-top:10px;">
-            <span>Hold in tune for</span>
+            <span>Wall thickness</span>
             <span class="val mono" id="holdVal">0.35 s</span>
           </div>
           <input type="range" id="holdSlider" min="10" max="120" step="5" value="35" />
@@ -769,7 +822,7 @@
           <div class="stats-group">
             <div class="stat"><span>Score</span> <span class="val mono" id="gameScore">0</span></div>
             <div class="stat"><span>Streak</span> <span class="val mono" id="gameStreak">0</span></div>
-            <div class="stat"><span>Lives</span> <span class="val mono" id="gameLives">♥♥♥</span></div>
+            <div class="stat"><span>Bounces</span> <span class="val mono" id="gameBounces">0</span></div>
             <div class="stat"><span>Level</span> <span class="val mono" id="gameLevel">1</span></div>
           </div>
         </div>
@@ -777,11 +830,15 @@
     </div>
 
     <footer class="note">
-      Each hurdle is a real frequency, not a label: Do is middle C at 261.63 Hz and the
-      octave runs up to Ti at 493.88 Hz (A4 = 440 Hz). Pitch is read from the mic by
-      normalized autocorrelation, so hums and whistles both work — with
-      <em>any octave counts</em> on, a low voice singing C3 clears a C4 hurdle, because
-      the match is on pitch class, not absolute frequency.
+      Every wall is a real frequency, not a label: Do is middle C at 261.63 Hz and the
+      octave runs up to Ti at 493.88 Hz (A4 = 440 Hz). The screen is one octave tall,
+      so a hole's <em>height</em> is its pitch and its <em>size</em> is the tolerance you
+      picked — at ±25 cents the gap is literally a quarter the height of the ±100-cent
+      step between neighbouring notes. Miss it and you bounce: nothing is lost except
+      forward progress, and the wall waits until you find the note. Pitch is read from
+      the mic by normalized autocorrelation, so hums and whistles both work; with
+      <em>any octave counts</em> on, a low voice singing C3 flies at Do's altitude,
+      because the match is on pitch class rather than absolute frequency.
     </footer>
   </section>
 
@@ -2375,6 +2432,12 @@
     { solfege: "La", name: "A4", freq: 440.00, hue: 215 },
     { solfege: "Ti", name: "B4", freq: 493.88, hue: 280 }
   ];
+  // Cents above Do for each degree — 0, 200, 400, 500, 700, 900, 1100. This is
+  // what places a wall's hole vertically.
+  SCALE.forEach(function (n) {
+    n.cents = 1200 * Math.log(n.freq / SCALE[0].freq) / Math.LN2;
+  });
+
   var POOLS = {
     ladder: [0, 1, 2, 3, 4, 5, 6],
     random: [0, 1, 2, 3, 4, 5, 6],
@@ -2401,11 +2464,15 @@
     refTone: document.getElementById("refToneToggle"),
     keyboard: document.getElementById("keyboardToggle"),
     legend: document.getElementById("gameLegend"),
+    sensSlider: document.getElementById("sensSlider"),
+    sensVal: document.getElementById("sensVal"),
+    levelFill: document.getElementById("levelFill"),
+    levelGate: document.getElementById("levelGate"),
     startBtn: document.getElementById("gameStartBtn"),
     resetBtn: document.getElementById("gameResetBtn"),
     score: document.getElementById("gameScore"),
     streak: document.getElementById("gameStreak"),
-    lives: document.getElementById("gameLives"),
+    bounces: document.getElementById("gameBounces"),
     level: document.getElementById("gameLevel")
   };
 
@@ -2416,8 +2483,16 @@
     octaveForgiving: true,
     holdSeconds: 0.35,
     refTone: false,
-    keyboardMode: false
+    keyboardMode: false,
+    micSensitivity: 1
   };
+
+  // Log-ish scale: a linear slider over a gate threshold feels dead at one end.
+  function sensitivityFor(v) { return Math.pow(1.45, v - 5); }
+  function sensitivityLabel(v) {
+    return v <= 2 ? "low" : v <= 4 ? "below normal" : v === 5 ? "normal"
+         : v <= 8 ? "high" : "very high";
+  }
 
   // ---------- audio: microphone + reference tone ----------
   var audio = {
@@ -2427,6 +2502,9 @@
     source: null,
     buf: null,
     ready: false,
+    level: 0,
+    gate: 0.01,
+    noiseFloor: null,
     gateUntil: 0   // while a reference tone sounds, ignore the mic so the
   };               // game cannot hear itself through the speakers and cheat
 
@@ -2462,11 +2540,14 @@
     els.micBtn.textContent = "Requesting…";
     navigator.mediaDevices.getUserMedia({
       audio: {
-        // All three defeat pitch tracking if left on: they are tuned for
-        // speech and will gate or duck a sustained hum.
+        // Echo cancellation and noise suppression are tuned for speech and will
+        // duck or gate a sustained hum, so they stay off. Auto gain does NOT
+        // move pitch, and phone mics are quiet enough without it that you have
+        // to shout — so leave it ON. Turning it off here was what made the
+        // mobile mic feel deaf.
         echoCancellation: false,
         noiseSuppression: false,
-        autoGainControl: false
+        autoGainControl: true
       }
     }).then(function (stream) {
       var ac = ensureCtx();
@@ -2532,11 +2613,16 @@
   var WIN = 1024;
   var nsdf = new Float32Array(2048);
 
-  function detectPitch(buf, sampleRate) {
-    var i, rms = 0;
-    for (i = 0; i < WIN; i++) { var v = buf[i]; rms += v * v; }
-    rms = Math.sqrt(rms / WIN);
-    if (rms < 0.012) return null;   // silence / room noise
+  function rmsOf(buf) {
+    var i, s = 0;
+    for (i = 0; i < WIN; i++) { var v = buf[i]; s += v * v; }
+    return Math.sqrt(s / WIN);
+  }
+
+  function detectPitch(buf, sampleRate, gate) {
+    if (gate === undefined) gate = 0.012;
+    var i, rms = rmsOf(buf);
+    if (rms < gate) return null;   // below the room's noise floor
 
     var tauMin = Math.max(2, Math.floor(sampleRate / 1200));
     var tauMax = Math.min(buf.length - WIN, Math.floor(sampleRate / 65));
@@ -2611,40 +2697,86 @@
   });
   window.addEventListener("blur", function () { keysHeld = {}; });
 
+  // ---------- pitch → altitude ----------
+  // The runner's height IS his pitch. One screen-height band spans one octave,
+  // so a wall's hole can sit at its note's own altitude and the target becomes
+  // something you can see rather than something you have to remember.
+  //
+  // The octave is circular, so a linear mapping has to be cut somewhere. Cut it
+  // midway between Ti and Do (1150 cents): singing Do 20 cents flat then reads
+  // as −20, a hair BELOW the Do line, instead of wrapping to 1180 and firing
+  // the runner to the top of the screen.
+  var C_MIN = -50, C_MAX = 1150;
+
+  function foldCents(c) {
+    while (c < C_MIN) c += 1200;
+    while (c >= C_MAX) c -= 1200;
+    return c;
+  }
+  function centsAboveDo(freq) {
+    return foldCents(1200 * Math.log(freq / SCALE[0].freq) / Math.LN2);
+  }
+
+  var layout = { top: 46, groundY: 400, bandH: 354 };
+  function computeLayout() {
+    var h = canvas.clientHeight || 460;
+    layout.top = 46;
+    layout.groundY = h - 52;
+    layout.bandH = layout.groundY - layout.top;
+  }
+  function yForCents(c) {
+    return layout.groundY - ((c - C_MIN) / (C_MAX - C_MIN)) * layout.bandH;
+  }
+  // A hole is the tolerance window made visible: ±tolerance cents tall.
+  function holeHalfHeight() {
+    return (opts.toleranceCents / (C_MAX - C_MIN)) * layout.bandH;
+  }
+  // ...but at the strict settings that window is thinner than the ball, which
+  // would read as "obviously impossible". Open the gap to at least the ball's
+  // height and draw the true tolerance as a bright band inside it. Passage is
+  // decided by pitch, never by this opening, so widening it changes nothing
+  // about difficulty — only about legibility.
+  function holeOpening() { return Math.max(13, holeHalfHeight()); }
+
+  // The one and only test for getting through: are you within tolerance of the
+  // wall's note? Deliberately NOT a geometric test against the ball's smoothed
+  // altitude — that silently tightened the tolerance by the ball's radius and
+  // ejected you for a momentary waver halfway through.
+  function pitchMatches(degree) {
+    if (!current.live || G.wrongOctave) return false;
+    return Math.abs(centsOff(current.freq, SCALE[degree].freq, opts.octaveForgiving))
+      <= opts.toleranceCents;
+  }
+
   // ---------- game state ----------
   var G = null;
   function newGame() {
     return {
       started: false,
       running: false,
-      over: false,
       score: 0,
       streak: 0,
-      lives: 3,
+      bounces: 0,
       level: 1,
       cleared: 0,
       distance: 0,
-      speed: 190,
-      hurdles: [],
-      nextSpawnAt: 0,      // in world distance units
-      runnerY: 0,          // px above ground
-      runnerVY: 0,
-      airborne: false,
+      speed: 170,
+      walls: [],
+      y: 0,               // ball's altitude in px
+      trail: [],
       runPhase: 0,
-      stumble: 0,
+      blocked: false,
+      bounceKick: 0,      // px of backward shove, decays
       shake: 0,
-      banner: "Sing the note on the hurdle to jump it.",
+      wrongOctave: false,
+      banner: "Sing a note to fly. Line up with the hole to get through.",
       bannerUntil: Infinity
     };
   }
   G = newGame();
 
-  var GRAVITY = 2000;      // px/s²
-  var JUMP_V = 620;        // px/s  → 0.62 s of air, ~96 px of clearance
-  var AIRTIME = (2 * JUMP_V) / GRAVITY;
-
-  function speedForLevel(lvl) { return Math.min(340, 190 + (lvl - 1) * 22); }
-  function activationLead(g) { return g.speed * 2.2; }   // px of "sing zone"
+  function speedForLevel(lvl) { return Math.min(300, 170 + (lvl - 1) * 18); }
+  function wallThickness(g) { return Math.max(20, opts.holdSeconds * g.speed); }
 
   function spawnHurdle(g, worldX) {
     var pool = POOLS[opts.pool] || POOLS.ladder;
@@ -2660,39 +2792,44 @@
       }
     }
     g.lastDeg = deg;
-    g.hurdles.push({
+    g.walls.push({
       x: worldX,
       degree: deg,
-      charge: 0,
-      armed: false,
-      active: false,
-      resolved: null,   // "cleared" | "hit"
-      knocked: 0
+      thickness: wallThickness(g),
+      cleared: false,
+      touched: false,   // bounced off or stalled in this one at least once
+      inside: false,
+      entered: false,   // threaded into the opening
+      faceHit: false,
+      stalled: false,
+      announced: false,
+      hitFlash: 0
     });
   }
 
   function startRun() {
     if (!audio.ready && !opts.keyboardMode) {
       // Nothing to detect with — say so instead of starting a run that
-      // cannot be won.
+      // cannot be played.
       setStatus("Enable the microphone first, or switch on keyboard mode to play with keys 1–7.", "err");
       return;
     }
     ensureCtx();
+    computeLayout();
     G = newGame();
     G.started = true;
     G.running = true;
     G.speed = speedForLevel(1);
+    G.y = layout.groundY;
     G.banner = "Go!";
     G.bannerUntil = performance.now() + 900;
-    spawnHurdle(G, canvas.clientWidth + 120);
-    G.nextSpawnAt = 0;
+    spawnHurdle(G, canvas.clientWidth + 140);
     els.startBtn.textContent = "Pause";
     syncStats();
   }
 
   els.startBtn.addEventListener("click", function () {
-    if (G.over || !G.started) {
+    if (!G.started) {
       startRun();
     } else {
       G.running = !G.running;
@@ -2702,6 +2839,8 @@
   });
   els.resetBtn.addEventListener("click", function () {
     G = newGame();
+    computeLayout();
+    G.y = layout.groundY;
     els.startBtn.textContent = "Start run";
     syncStats();
   });
@@ -2709,7 +2848,7 @@
   function syncStats() {
     els.score.textContent = String(G.score);
     els.streak.textContent = String(G.streak);
-    els.lives.textContent = G.lives > 0 ? new Array(G.lives + 1).join("♥") : "—";
+    els.bounces.textContent = String(G.bounces);
     els.level.textContent = String(G.level);
   }
 
@@ -2719,6 +2858,12 @@
   els.octaveForgive.addEventListener("change", function () { opts.octaveForgiving = els.octaveForgive.checked; });
   els.refTone.addEventListener("change", function () { opts.refTone = els.refTone.checked; });
   els.keyboard.addEventListener("change", function () { opts.keyboardMode = els.keyboard.checked; });
+  els.sensSlider.addEventListener("input", function () {
+    var v = parseInt(els.sensSlider.value, 10);
+    opts.micSensitivity = sensitivityFor(v);
+    els.sensVal.textContent = sensitivityLabel(v);
+    audio.noiseFloor = null;   // re-learn the room at the new setting
+  });
   els.holdSlider.addEventListener("input", function () {
     opts.holdSeconds = parseInt(els.holdSlider.value, 10) / 100;
     els.holdVal.textContent = opts.holdSeconds.toFixed(2) + " s";
@@ -2759,8 +2904,23 @@
     lastDetect = nowMs;                    // O(WIN × lags) scan off the frame budget
 
     audio.analyser.getFloatTimeDomainData(audio.buf);
-    var res = detectPitch(audio.buf, audio.ctx.sampleRate);
-    if (!res || res.clarity < 0.6) { current.live = false; current.degree = -1; return; }
+
+    // Adaptive noise floor. A fixed threshold cannot serve both a laptop mic in
+    // a quiet room and a phone held at arm's length: whatever number suits one
+    // makes the other either deaf or permanently triggered. Track the quietest
+    // recent level instead — it falls fast toward a new minimum and creeps back
+    // up slowly — and gate a little above it.
+    var rms = rmsOf(audio.buf);
+    audio.level = rms;
+    if (audio.noiseFloor === null) audio.noiseFloor = rms;
+    else if (rms < audio.noiseFloor) audio.noiseFloor = audio.noiseFloor * 0.85 + rms * 0.15;
+    else audio.noiseFloor = audio.noiseFloor * 0.9995 + rms * 0.0005;
+
+    var gate = Math.max(0.0015, audio.noiseFloor * 2.5) / opts.micSensitivity;
+    audio.gate = gate;
+
+    var res = detectPitch(audio.buf, audio.ctx.sampleRate, gate);
+    if (!res || res.clarity < 0.55) { current.live = false; current.degree = -1; return; }
     var near = nearestScaleIndex(res.freq);
     current.freq = res.freq;
     current.degree = near.index;
@@ -2770,6 +2930,14 @@
   }
 
   function updateTunerUI() {
+    // Input meter. Scaled so ordinary singing sits mid-bar rather than pinned.
+    var lvl = Math.min(1, Math.sqrt(audio.level / 0.25));
+    var gatePos = Math.min(1, Math.sqrt(audio.gate / 0.25));
+    els.levelFill.style.width = (lvl * 100).toFixed(1) + "%";
+    els.levelGate.style.left = (gatePos * 100).toFixed(1) + "%";
+    els.levelFill.style.background = audio.level > audio.gate
+      ? "var(--accent2-strong)" : "var(--text-faint)";
+
     if (!current.live) {
       els.tunerNote.textContent = "—";
       els.tunerNote.className = "tuner-note";
@@ -2795,114 +2963,135 @@
   function update(dt, nowMs) {
     var w = canvas.clientWidth;
     var runnerX = w * 0.22;
+    var RR = 9;                       // runner's collision radius
+    computeLayout();
 
-    if (G.shake > 0) G.shake = Math.max(0, G.shake - dt * 3);
-    if (G.stumble > 0) G.stumble = Math.max(0, G.stumble - dt);
+    if (G.shake > 0) G.shake = Math.max(0, G.shake - dt * 3.5);
+    if (G.bounceKick > 0) G.bounceKick = Math.max(0, G.bounceKick - dt * 90);
 
-    if (!G.running || G.over) return;
+    if (!G.running) return;
 
-    G.distance += G.speed * dt;
-    G.runPhase += dt * (G.airborne ? 2 : G.speed / 26);
-
-    // move hurdles
-    var i;
-    for (i = 0; i < G.hurdles.length; i++) G.hurdles[i].x -= G.speed * dt;
-
-    // spawn: keep roughly 3 seconds of runway between hurdles
-    var lastX = -Infinity;
-    for (i = 0; i < G.hurdles.length; i++) lastX = Math.max(lastX, G.hurdles[i].x);
-    if (lastX < w - G.speed * 3.0) spawnHurdle(G, w + 80);
-
-    // the active hurdle is the nearest unresolved one ahead of the runner
-    var active = null;
-    for (i = 0; i < G.hurdles.length; i++) {
-      var hd = G.hurdles[i];
-      if (!hd.resolved && hd.x > runnerX - 10) {
-        if (!active || hd.x < active.x) active = hd;
+    // ----- altitude follows the sung pitch -----
+    // With no usable signal he sinks to the ground, so going quiet is never a
+    // way past a wall whose hole sits up high.
+    var targetY = layout.groundY;
+    G.wrongOctave = false;
+    if (current.live) {
+      targetY = yForCents(centsAboveDo(current.freq));
+      if (!opts.octaveForgiving &&
+          Math.abs(centsOff(current.freq, SCALE[current.degree].freq, false)) > 600) {
+        G.wrongOctave = true;
       }
     }
+    G.y += (targetY - G.y) * Math.min(1, dt * 11);
+    G.runPhase += dt * (G.blocked ? 0.6 : G.speed / 22);
 
-    for (i = 0; i < G.hurdles.length; i++) G.hurdles[i].active = false;
+    G.trail.push({ x: w * 0.22 - G.bounceKick, y: G.y });
+    if (G.trail.length > 10) G.trail.shift();
 
-    if (active && active.x - runnerX <= activationLead(G)) {
-      active.active = true;
-      if (!active.announced) {
-        active.announced = true;
-        if (opts.refTone) playTone(SCALE[active.degree].freq, 0.45, 0.10);
-      }
-      if (!active.armed) {
-        var inTune = current.live &&
-          current.degree === active.degree &&
-          Math.abs(current.cents) <= opts.toleranceCents &&
-          (opts.octaveForgiving || Math.abs(centsOff(current.freq, SCALE[active.degree].freq, false)) <= opts.toleranceCents);
-        if (inTune) {
-          active.charge += dt / Math.max(0.05, opts.holdSeconds);
-          if (active.charge >= 1) { active.charge = 1; active.armed = true; }
+    // ----- does he fit through the wall in front of him? -----
+    var i, wl;
+    var blocking = null;
+    for (i = 0; i < G.walls.length; i++) {
+      wl = G.walls[i];
+      if (wl.cleared) continue;
+      // Horizontal overlap between the ball and this wall's slab. The bounds are
+      // inclusive on purpose: a blocked wall is parked at exactly runnerX + RR,
+      // and with a strict > it would fall out of overlap for one frame, let the
+      // whole world scroll a step, and creep the wall through the ball.
+      if (runnerX + RR >= wl.x && runnerX - RR <= wl.x + wl.thickness) {
+        var fits = pitchMatches(wl.degree);
+        wl.inside = fits;
+        if (wl.entered) {
+          // Already threaded into the opening. Ride it like a tube: hold the
+          // ball at the hole's altitude so it never draws inside the brick, and
+          // if the pitch slips just stall in place rather than ejecting.
+          var holeY = yForCents(SCALE[wl.degree].cents);
+          var op = holeOpening();
+          G.y = Math.max(holeY - op + 2, Math.min(holeY + op - 2, G.y));
+          if (!fits) {
+            blocking = wl;
+            wl.stalled = true;
+            if (!wl.touched) { wl.touched = true; G.streak = 0; }
+            break;
+          }
+          wl.stalled = false;
+        } else if (fits) {
+          wl.entered = true;      // threaded the opening on arrival
         } else {
-          // Decay slowly: a half-second wobble mid-note should not wipe out
-          // the whole hold.
-          active.charge = Math.max(0, active.charge - dt * 0.55);
-        }
-      }
-    }
-
-    // jump timing: fire so the apex sits over the bar
-    if (active && active.armed && !active.jumped && !G.airborne) {
-      var lead = G.speed * (AIRTIME / 2);
-      if (active.x - runnerX <= lead) {
-        active.jumped = true;
-        G.runnerVY = -JUMP_V;
-        G.airborne = true;
-      }
-    }
-
-    // runner physics. runnerY is height ABOVE the ground and runnerVY points
-    // the screen way (negative = rising), so height integrates -vy.
-    if (G.airborne) {
-      G.runnerVY += GRAVITY * dt;
-      G.runnerY -= G.runnerVY * dt;
-      if (G.runnerY <= 0) { G.runnerY = 0; G.runnerVY = 0; G.airborne = false; }
-    }
-
-    // resolve hurdles as they reach the runner
-    for (i = 0; i < G.hurdles.length; i++) {
-      var h = G.hurdles[i];
-      if (h.resolved || h.x > runnerX) continue;
-      if (h.armed) {
-        h.resolved = "cleared";
-        G.streak++;
-        G.cleared++;
-        G.score += 100 + (G.streak - 1) * 10;
-        G.banner = SCALE[h.degree].solfege + "! +" + (100 + (G.streak - 1) * 10);
-        G.bannerUntil = nowMs + 900;
-        if (G.cleared % 5 === 0) {
-          G.level++;
-          G.speed = speedForLevel(G.level);
-          G.banner = "Level " + G.level + " — faster";
-          G.bannerUntil = nowMs + 1200;
+          blocking = wl;          // face-on collision
+          wl.faceHit = true;
+          break;
         }
       } else {
-        h.resolved = "hit";
-        h.knocked = 1;
-        G.streak = 0;
-        G.lives--;
-        G.stumble = 0.6;
-        G.shake = 1;
-        G.banner = "Missed " + SCALE[h.degree].solfege + " (" + SCALE[h.degree].freq.toFixed(0) + " Hz)";
-        G.bannerUntil = nowMs + 1200;
-        if (G.lives <= 0) {
-          G.over = true;
-          G.running = false;
-          els.startBtn.textContent = "Start run";
-          G.banner = "Run over — " + G.score + " points, " + G.cleared + " hurdles";
-          G.bannerUntil = Infinity;
+        wl.inside = false;
+      }
+    }
+
+    if (blocking) {
+      // No passage. The world simply stops advancing until the pitch is right.
+      // No lives, no failure state — just no progress.
+      var restX = runnerX + RR;
+      if (blocking.faceHit && blocking.x < restX) {
+        G.bounceKick = Math.min(16, G.bounceKick + (restX - blocking.x));
+        blocking.x = restX;
+        if (!blocking.touched) {
+          blocking.touched = true;
+          G.streak = 0;
+          G.bounces++;
+          G.shake = 0.7;
+          blocking.hitFlash = 1;
+          G.banner = "Bounced — sing " + SCALE[blocking.degree].solfege +
+                     " (" + SCALE[blocking.degree].freq.toFixed(0) + " Hz)";
+          G.bannerUntil = nowMs + 1600;
+          syncStats();
         }
+      }
+      G.blocked = true;
+    } else {
+      G.blocked = false;
+      G.distance += G.speed * dt;
+      for (i = 0; i < G.walls.length; i++) G.walls[i].x -= G.speed * dt;
+    }
+
+    for (i = 0; i < G.walls.length; i++) {
+      wl = G.walls[i];
+      if (wl.hitFlash > 0) wl.hitFlash = Math.max(0, wl.hitFlash - dt * 2);
+      if (!wl.cleared && !wl.announced && wl.x - runnerX <= G.speed * 2.2) {
+        wl.announced = true;
+        if (opts.refTone) playTone(SCALE[wl.degree].freq, 0.45, 0.10);
+      }
+    }
+
+    // ----- clear walls he has fully passed through -----
+    for (i = 0; i < G.walls.length; i++) {
+      wl = G.walls[i];
+      if (wl.cleared || wl.x + wl.thickness > runnerX - RR) continue;
+      wl.cleared = true;
+      G.cleared++;
+      var clean = !wl.touched;
+      if (clean) G.streak++;
+      var pts = clean ? 150 + (G.streak - 1) * 10 : 60;
+      G.score += pts;
+      G.banner = (clean ? "Clean " : "") + SCALE[wl.degree].solfege + "! +" + pts;
+      G.bannerUntil = nowMs + 900;
+      if (G.cleared % 5 === 0) {
+        G.level++;
+        G.speed = speedForLevel(G.level);
+        G.banner = "Level " + G.level + " — faster, thicker walls";
+        G.bannerUntil = nowMs + 1300;
       }
       syncStats();
     }
 
-    // drop hurdles that are well off-screen
-    G.hurdles = G.hurdles.filter(function (hh) { return hh.x > -160; });
+    // ----- spawn: keep roughly 3.2 s of runway between walls -----
+    var lastX = -Infinity;
+    for (i = 0; i < G.walls.length; i++) {
+      lastX = Math.max(lastX, G.walls[i].x + G.walls[i].thickness);
+    }
+    if (lastX < w - G.speed * 3.2) spawnHurdle(G, w + 60);
+
+    G.walls = G.walls.filter(function (ww) { return ww.x + ww.thickness > -80; });
   }
 
   // ---------- rendering ----------
@@ -2910,119 +3099,149 @@
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
-  function drawRunner(x, groundY, height, phase, airborne, stumble) {
-    var col = cssVar("--text");
-    var accent = cssVar("--accent-strong");
-    var y = groundY - height;             // hip height above ground
-    var lean = stumble > 0 ? 0.45 : (airborne ? 0.15 : 0.1);
+  // Faint horizontal line per scale degree, labelled down the left gutter, so
+  // the pitch axis stays legible even with no wall on screen.
+  function drawStaff(w) {
+    ctx.save();
+    ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    ctx.textBaseline = "middle";
+    for (var i = 0; i < SCALE.length; i++) {
+      var n = SCALE[i];
+      var y = yForCents(n.cents);
+      var lit = current.live && current.degree === i;
+      ctx.strokeStyle = lit ? "hsl(" + n.hue + " 62% 58%)" : cssVar("--border");
+      ctx.globalAlpha = lit ? 0.8 : 0.4;
+      ctx.lineWidth = 1;
+      ctx.setLineDash(lit ? [] : [3, 5]);
+      ctx.beginPath();
+      ctx.moveTo(34, y); ctx.lineTo(w, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = lit ? "hsl(" + n.hue + " 62% 62%)" : cssVar("--text-faint");
+      ctx.fillText(n.solfege, 5, y);
+    }
+    ctx.restore();
+    ctx.textBaseline = "alphabetic";
+  }
+
+  function drawWall(wl) {
+    var n = SCALE[wl.degree];
+    var hue = "hsl(" + n.hue + " 62% 58%)";
+    var holeY = yForCents(n.cents);
+    var hh = holeOpening();
+    var tol = holeHalfHeight();
+    var top = 8;
+    var x = wl.x, th = wl.thickness;
+
+    // the two slabs, above and below the gap
+    ctx.fillStyle = cssVar("--panel-2");
+    ctx.strokeStyle = wl.hitFlash > 0 ? "#e07a5f" : hue;
+    ctx.lineWidth = wl.hitFlash > 0 ? 3 : 2;
+    ctx.beginPath();
+    ctx.rect(x, top, th, (holeY - hh) - top);
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.rect(x, holeY + hh, th, layout.groundY - (holeY + hh));
+    ctx.fill(); ctx.stroke();
+
+    // courses of brick, so the slabs read as solid rather than as frames
+    ctx.save();
+    ctx.globalAlpha = 0.26;
+    ctx.strokeStyle = hue;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (var yy = top + 14; yy < holeY - hh; yy += 14) { ctx.moveTo(x, yy); ctx.lineTo(x + th, yy); }
+    for (yy = holeY + hh + 14; yy < layout.groundY; yy += 14) { ctx.moveTo(x, yy); ctx.lineTo(x + th, yy); }
+    ctx.stroke();
+    ctx.restore();
+
+    // the hole itself: lit lip, and filled while he is actually inside it
+    ctx.save();
+    ctx.strokeStyle = hue;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x, holeY - hh); ctx.lineTo(x + th, holeY - hh);
+    ctx.moveTo(x, holeY + hh); ctx.lineTo(x + th, holeY + hh);
+    ctx.stroke();
+    if (wl.inside) {
+      ctx.globalAlpha = 0.22;
+      ctx.fillStyle = hue;
+      ctx.fillRect(x, holeY - hh, th, hh * 2);
+    }
+    // When the tolerance is tighter than the opening, show where the pitch
+    // actually has to land, so a strict setting still looks honest.
+    if (tol < hh - 1) {
+      ctx.globalAlpha = 0.85;
+      ctx.strokeStyle = "hsl(" + n.hue + " 70% 72%)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x, holeY - tol); ctx.lineTo(x + th, holeY - tol);
+      ctx.moveTo(x, holeY + tol); ctx.lineTo(x + th, holeY + tol);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+
+    // label rides just above the hole
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.font = "700 15px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    ctx.fillStyle = hue;
+    ctx.fillText(n.solfege, x + th / 2, Math.max(21, holeY - hh - 26));
+    ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    ctx.fillStyle = cssVar("--text-muted");
+    ctx.fillText(n.freq.toFixed(0) + " Hz", x + th / 2, Math.max(32, holeY - hh - 14));
+    ctx.restore();
+    ctx.textAlign = "left";
+  }
+
+  // The ball is coloured by the note you are singing, and every hole's lip is
+  // coloured by the note it wants — so "match the colour" and "match the pitch"
+  // are the same instruction, readable at a glance and before you can read the
+  // cents.
+  function drawBall(x, y, phase, blocked, live, trail) {
+    var R = 11;
+    var col = live ? "hsl(" + SCALE[current.degree].hue + " 62% 58%)" : cssVar("--text-faint");
+
+    // motion trail
+    ctx.save();
+    for (var i = 0; i < trail.length; i++) {
+      var t = trail[i];
+      ctx.globalAlpha = 0.06 + 0.16 * (i / trail.length);
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, R * (0.35 + 0.5 * (i / trail.length)), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
 
     ctx.save();
     ctx.translate(x, y);
-    ctx.rotate(lean * (stumble > 0 ? 1 : 0.2));
-    ctx.strokeStyle = col;
-    ctx.lineWidth = 3.5;
-    ctx.lineCap = "round";
+    // squash against the wall on a bounce, stretch slightly while climbing
+    if (blocked) ctx.scale(0.82, 1.14);
+    ctx.rotate(phase * 0.5);
 
-    // head
-    ctx.fillStyle = accent;
+    ctx.fillStyle = col;
     ctx.beginPath();
-    ctx.arc(0, -30, 9, 0, Math.PI * 2);
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
     ctx.fill();
 
-    // torso
-    ctx.beginPath();
-    ctx.moveTo(0, -21);
-    ctx.lineTo(0, 2);
-    ctx.stroke();
+    // two spin marks, so rolling and stalling are visibly different
+    ctx.globalAlpha = 0.45;
+    ctx.fillStyle = cssVar("--canvas-bg");
+    ctx.beginPath(); ctx.arc(0, -R * 0.45, R * 0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, R * 0.45, R * 0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
 
-    var swing = Math.sin(phase);
-    var swing2 = Math.sin(phase + Math.PI);
-
-    // arms
-    ctx.beginPath();
-    if (airborne) {
-      ctx.moveTo(0, -14); ctx.lineTo(-14, -26);
-      ctx.moveTo(0, -14); ctx.lineTo(14, -24);
-    } else {
-      ctx.moveTo(0, -14); ctx.lineTo(swing * 12, -4);
-      ctx.moveTo(0, -14); ctx.lineTo(swing2 * 12, -4);
+    // bright rim while a pitch is actually driving it
+    if (live) {
+      ctx.strokeStyle = "hsl(" + SCALE[current.degree].hue + " 70% 72%)";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, R + 1.5, 0, Math.PI * 2); ctx.stroke();
     }
-    ctx.stroke();
-
-    // legs
-    ctx.beginPath();
-    if (airborne) {
-      ctx.moveTo(0, 2); ctx.lineTo(16, 6);   ctx.lineTo(24, 0);
-      ctx.moveTo(0, 2); ctx.lineTo(-10, 12); ctx.lineTo(-18, 6);
-    } else if (stumble > 0) {
-      ctx.moveTo(0, 2); ctx.lineTo(14, 16); ctx.lineTo(20, 26);
-      ctx.moveTo(0, 2); ctx.lineTo(-6, 18); ctx.lineTo(-16, 24);
-    } else {
-      ctx.moveTo(0, 2); ctx.lineTo(swing2 * 11, 14); ctx.lineTo(swing2 * 15, 28);
-      ctx.moveTo(0, 2); ctx.lineTo(swing * 11, 14);  ctx.lineTo(swing * 15, 28);
-    }
-    ctx.stroke();
     ctx.restore();
-  }
-
-  function drawHurdle(h, groundY) {
-    var note = SCALE[h.degree];
-    var barH = 58;
-    var col = "hsl(" + note.hue + " 62% 58%)";
-    var faint = cssVar("--text-faint");
-
-    ctx.save();
-    ctx.translate(h.x, groundY);
-    if (h.knocked > 0) ctx.rotate(-0.9);     // knocked flat after a miss
-
-    ctx.strokeStyle = h.resolved === "hit" ? faint : col;
-    ctx.lineWidth = 3;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(-11, 0); ctx.lineTo(-11, -barH);
-    ctx.moveTo(11, 0);  ctx.lineTo(11, -barH);
-    ctx.moveTo(-15, -barH); ctx.lineTo(15, -barH);
-    ctx.moveTo(-13, -barH * 0.55); ctx.lineTo(13, -barH * 0.55);
-    ctx.stroke();
-    ctx.restore();
-
-    if (h.resolved === "hit") return;
-
-    // flag above the bar: solfège + note name + frequency
-    var fx = h.x, fy = groundY - barH - 14;
-    var label = note.solfege;
-    ctx.font = "700 20px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-    var wLabel = Math.max(ctx.measureText(label).width, 58) + 18;
-    var boxH = 46;
-
-    ctx.fillStyle = h.active ? "hsl(" + note.hue + " 62% 58% / 0.22)" : cssVar("--panel-2");
-    ctx.strokeStyle = h.active ? "hsl(" + note.hue + " 62% 58%)" : cssVar("--border");
-    ctx.lineWidth = h.active ? 2 : 1;
-    roundRect(fx - wLabel / 2, fy - boxH, wLabel, boxH, 7);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = "hsl(" + note.hue + " 62% " + (h.active ? "64%" : "52%") + ")";
-    ctx.fillText(label, fx, fy - boxH + 22);
-    ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-    ctx.fillStyle = cssVar("--text-muted");
-    ctx.fillText(note.name + " · " + note.freq.toFixed(0) + " Hz", fx, fy - boxH + 37);
-
-    // charge meter — fills while the singer holds the right pitch
-    if (h.active || h.charge > 0) {
-      var mw = wLabel, mx = fx - mw / 2, my = fy + 4;
-      ctx.fillStyle = cssVar("--border");
-      roundRect(mx, my, mw, 6, 3); ctx.fill();
-      ctx.fillStyle = h.armed ? cssVar("--accent2-strong") : "hsl(" + note.hue + " 62% 58%)";
-      roundRect(mx, my, mw * Math.min(1, h.charge), 6, 3); ctx.fill();
-      if (h.armed) {
-        ctx.font = "700 10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-        ctx.fillStyle = cssVar("--accent2-strong");
-        ctx.fillText("LOCKED", fx, my + 19);
-      }
-    }
-    ctx.textAlign = "left";
   }
 
   function roundRect(x, y, w, h, r) {
@@ -3037,73 +3256,48 @@
 
   function render(nowMs) {
     var w = canvas.clientWidth, h = canvas.clientHeight;
+    computeLayout();
     ctx.clearRect(0, 0, w, h);
 
-    var groundY = h - 66;
     var runnerX = w * 0.22;
 
     ctx.save();
     if (G.shake > 0) {
-      ctx.translate((Math.random() - 0.5) * 8 * G.shake, (Math.random() - 0.5) * 6 * G.shake);
+      ctx.translate((Math.random() - 0.5) * 9 * G.shake, (Math.random() - 0.5) * 7 * G.shake);
     }
+
+    drawStaff(w);
 
     // ground
     ctx.strokeStyle = cssVar("--canvas-ground");
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(0, groundY); ctx.lineTo(w, groundY);
+    ctx.moveTo(0, layout.groundY); ctx.lineTo(w, layout.groundY);
     ctx.stroke();
 
-    // scrolling ticks so the motion reads even between hurdles
+    // scrolling ticks, so a stalled run visibly stops moving
     ctx.lineWidth = 1;
     ctx.globalAlpha = 0.6;
     var off = G.distance % 40;
     ctx.beginPath();
     for (var tx = -off; tx < w; tx += 40) {
-      ctx.moveTo(tx, groundY + 4);
-      ctx.lineTo(tx + 12, groundY + 4);
+      ctx.moveTo(tx, layout.groundY + 4);
+      ctx.lineTo(tx + 12, layout.groundY + 4);
     }
     ctx.stroke();
     ctx.globalAlpha = 1;
 
-    // sing-zone marker
-    var zoneX = runnerX + activationLead(G);
-    if (zoneX < w) {
-      ctx.setLineDash([4, 6]);
-      ctx.strokeStyle = cssVar("--border");
-      ctx.beginPath();
-      ctx.moveTo(zoneX, groundY - 150); ctx.lineTo(zoneX, groundY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-      ctx.fillStyle = cssVar("--text-faint");
-      ctx.textAlign = "center";
-      ctx.fillText("sing zone", zoneX, groundY - 156);
-      ctx.textAlign = "left";
-    }
-
-    G.hurdles.forEach(function (hd) { drawHurdle(hd, groundY); });
-    drawRunner(runnerX, groundY, G.runnerY + 30, G.runPhase, G.airborne, G.stumble);
+    G.walls.forEach(function (wl) { if (!wl.cleared) drawWall(wl); });
+    drawBall(runnerX - G.bounceKick, G.y, G.runPhase, G.blocked, current.live, G.trail);
 
     ctx.restore();
 
-    // HUD: what to sing right now, and what is being heard
-    var active = null;
-    G.hurdles.forEach(function (hd) { if (hd.active) active = hd; });
-
     ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-    ctx.fillStyle = cssVar("--text-faint");
-    if (active) {
-      var n = SCALE[active.degree];
-      ctx.fillText("SING", 14, 22);
-      ctx.font = "700 22px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-      ctx.fillStyle = "hsl(" + n.hue + " 62% 58%)";
-      ctx.fillText(n.solfege + "  " + n.freq.toFixed(2) + " Hz", 14, 46);
-    } else {
-      ctx.fillText(G.running ? "…" : "", 14, 22);
+    if (G.wrongOctave) {
+      ctx.fillStyle = "#e07a5f";
+      ctx.fillText("right note, wrong octave", 14, 22);
     }
 
-    ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
     ctx.textAlign = "right";
     ctx.fillStyle = current.live ? cssVar("--accent2-strong") : cssVar("--text-faint");
     ctx.fillText(
@@ -3115,19 +3309,15 @@
     );
     ctx.textAlign = "left";
 
-    // banner / start & game-over overlay
-    var showBanner = nowMs < G.bannerUntil;
-    if (!G.running && !G.over) {
-      overlay(w, h, G.cleared > 0 ? "Paused" : "Pitch Runner",
-        G.cleared > 0 ? "Press Resume." :
-        "Enable the mic (or keyboard mode), press Start, then sing each hurdle's note to jump it.");
-    } else if (G.over) {
-      overlay(w, h, "Run over", G.score + " points · " + G.cleared + " hurdles cleared · press Start to run again");
-    } else if (showBanner) {
+    if (!G.running) {
+      overlay(w, h, G.started ? "Paused" : "Pitch Runner",
+        G.started ? "Press Resume."
+                  : "Your pitch is your altitude — fly through each wall's hole to pass.");
+    } else if (nowMs < G.bannerUntil) {
       ctx.textAlign = "center";
-      ctx.font = "700 15px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-      ctx.fillStyle = cssVar("--text-muted");
-      ctx.fillText(G.banner, w / 2, 30);
+      ctx.font = "700 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+      ctx.fillStyle = G.blocked ? "#e07a5f" : cssVar("--text-muted");
+      ctx.fillText(G.banner, w / 2, 24);
       ctx.textAlign = "left";
     }
   }
@@ -3156,6 +3346,8 @@
     canvas.width = Math.round(cssWidth * dpr);
     canvas.height = Math.round(cssHeight * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    computeLayout();
+    if (!G.started) G.y = layout.groundY;
   }
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", resize);
@@ -3211,6 +3403,8 @@
   opts.toleranceCents = parseFloat(els.difficulty.value);
   opts.holdSeconds = parseInt(els.holdSlider.value, 10) / 100;
   els.holdVal.textContent = opts.holdSeconds.toFixed(2) + " s";
+  opts.micSensitivity = sensitivityFor(parseInt(els.sensSlider.value, 10));
+  els.sensVal.textContent = sensitivityLabel(parseInt(els.sensSlider.value, 10));
   syncStats();
   resize();
   requestAnimationFrame(loop);
