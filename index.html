@@ -352,6 +352,148 @@
     font-size: 0.78rem;
     line-height: 1.6;
   }
+
+  /* ---------- tab bar ---------- */
+  nav.tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  nav.tabs button {
+    background: none;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    color: var(--text-faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+    letter-spacing: 0.03em;
+    padding: 9px 16px;
+    min-height: 40px;
+    cursor: pointer;
+    margin-bottom: -1px;
+  }
+  nav.tabs button:hover { color: var(--text); }
+  nav.tabs button[aria-selected="true"] {
+    background: var(--panel);
+    border-color: var(--border);
+    border-bottom: 1px solid var(--panel);
+    color: var(--accent-strong);
+    font-weight: 700;
+  }
+
+  [hidden] { display: none !important; }
+
+  /* ---------- pitch game ---------- */
+  .mic-btn {
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: #1a1509;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    width: 100%;
+    min-height: 42px;
+  }
+  .mic-btn:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .mic-btn[disabled] { opacity: 0.55; cursor: default; }
+
+  .mic-status {
+    font-size: 0.74rem;
+    color: var(--text-faint);
+    line-height: 1.5;
+  }
+  .mic-status.err { color: #e07a5f; }
+  .mic-status.ok { color: var(--accent2-strong); }
+
+  /* live tuner readout */
+  .tuner {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .tuner-note {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-faint);
+    text-align: center;
+  }
+  .tuner-note.live { color: var(--accent2-strong); }
+  .tuner-hz {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.74rem;
+    color: var(--text-faint);
+    text-align: center;
+  }
+  .cents-bar {
+    position: relative;
+    height: 10px;
+    background: var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .cents-bar .center-tick {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--text-faint);
+  }
+  .cents-bar .needle {
+    position: absolute;
+    top: 1px;
+    bottom: 1px;
+    width: 8px;
+    margin-left: -4px;
+    border-radius: 999px;
+    background: var(--accent);
+    left: 50%;
+    opacity: 0;
+    transition: left 60ms linear, background 120ms;
+  }
+  .cents-bar .needle.in-tune { background: var(--accent2-strong); }
+  .cents-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.66rem;
+    color: var(--text-faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  .game-legend {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+  }
+  .game-legend div {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 5px 2px;
+    text-align: center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.64rem;
+    color: var(--text-muted);
+    line-height: 1.35;
+  }
+  .game-legend div b { display: block; color: var(--text); font-size: 0.74rem; }
+  .game-legend div.lit {
+    border-color: var(--accent2);
+    color: var(--text);
+    background: color-mix(in srgb, var(--accent2) 18%, var(--panel-2));
+  }
 </style>
 </head>
 <body>
@@ -368,6 +510,12 @@
     </div>
   </header>
 
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button type="button" id="tabBtnViz" role="tab" aria-selected="true" aria-controls="panelViz">visualizer</button>
+    <button type="button" id="tabBtnGame" role="tab" aria-selected="false" aria-controls="panelGame">pitch runner</button>
+  </nav>
+
+  <section id="panelViz" role="tabpanel" aria-labelledby="tabBtnViz">
   <div class="layout">
     <aside class="controls">
 
@@ -526,6 +674,116 @@
     is itself the honest picture: real musical intervals like a major third or a fifth are only
     close to simple whole-number ratios on a piano, not exact.
   </footer>
+  </section>
+
+  <section id="panelGame" role="tabpanel" aria-labelledby="tabBtnGame" hidden>
+    <div class="layout">
+      <aside class="controls">
+
+        <div class="field-group">
+          <span class="field-label">Input</span>
+          <button class="mic-btn" id="micBtn" type="button">Enable microphone</button>
+          <p class="mic-status" id="micStatus">
+            Sing, hum, or whistle the note on each hurdle. Headphones recommended —
+            speakers let the game hear itself.
+          </p>
+        </div>
+
+        <div class="field-group">
+          <span class="field-label">Live pitch</span>
+          <div class="tuner">
+            <div class="tuner-note" id="tunerNote">—</div>
+            <div class="tuner-hz mono" id="tunerHz">no signal</div>
+            <div class="cents-bar">
+              <div class="center-tick"></div>
+              <div class="needle" id="centsNeedle"></div>
+            </div>
+            <div class="cents-label"><span>−50¢</span><span id="centsVal">flat / sharp</span><span>+50¢</span></div>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="gameModeSelect">Note pool</label>
+          <select id="gameModeSelect">
+            <option value="ladder">Do-Re-Mi ladder (C D E F G A B)</option>
+            <option value="random">Random from C major</option>
+            <option value="pentatonic">Pentatonic (C D E G A)</option>
+            <option value="triad">Easy: Do–Mi–Sol (C E G)</option>
+          </select>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="difficultySelect">Pitch tolerance</label>
+          <select id="difficultySelect">
+            <option value="80">Forgiving — ±80 cents</option>
+            <option value="50" selected>Normal — ±50 cents</option>
+            <option value="25">Strict — ±25 cents</option>
+            <option value="12">Brutal — ±12 cents</option>
+          </select>
+          <div class="sound-row" style="margin-top:8px;">
+            <label class="switch">
+              <input type="checkbox" id="octaveForgiveToggle" checked />
+              <span class="track"></span><span class="thumb"></span>
+            </label>
+            <span style="font-size:0.78rem; color:var(--text-muted);">Any octave counts</span>
+          </div>
+          <div class="row-label-value" style="margin-top:10px;">
+            <span>Hold in tune for</span>
+            <span class="val mono" id="holdVal">0.35 s</span>
+          </div>
+          <input type="range" id="holdSlider" min="10" max="120" step="5" value="35" />
+        </div>
+
+        <div class="field-group">
+          <span class="field-label">Assists</span>
+          <div class="sound-row">
+            <label class="switch">
+              <input type="checkbox" id="refToneToggle" />
+              <span class="track"></span><span class="thumb"></span>
+            </label>
+            <span style="font-size:0.78rem; color:var(--text-muted);">Play target note on spawn</span>
+          </div>
+          <div class="sound-row" style="margin-top:8px;">
+            <label class="switch">
+              <input type="checkbox" id="keyboardToggle" />
+              <span class="track"></span><span class="thumb"></span>
+            </label>
+            <span style="font-size:0.78rem; color:var(--text-muted);">Keyboard mode (keys 1–7)</span>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <span class="field-label">Scale</span>
+          <div class="game-legend" id="gameLegend"></div>
+        </div>
+
+      </aside>
+
+      <main class="stage">
+        <canvas id="game" height="460"></canvas>
+        <div class="stage-footer">
+          <div class="transport">
+            <button class="transport-btn primary" id="gameStartBtn" type="button">Start run</button>
+            <button class="transport-btn" id="gameResetBtn" type="button">Reset</button>
+          </div>
+          <div class="stats-group">
+            <div class="stat"><span>Score</span> <span class="val mono" id="gameScore">0</span></div>
+            <div class="stat"><span>Streak</span> <span class="val mono" id="gameStreak">0</span></div>
+            <div class="stat"><span>Lives</span> <span class="val mono" id="gameLives">♥♥♥</span></div>
+            <div class="stat"><span>Level</span> <span class="val mono" id="gameLevel">1</span></div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <footer class="note">
+      Each hurdle is a real frequency, not a label: Do is middle C at 261.63 Hz and the
+      octave runs up to Ti at 493.88 Hz (A4 = 440 Hz). Pitch is read from the mic by
+      normalized autocorrelation, so hums and whistles both work — with
+      <em>any octave counts</em> on, a low voice singing C3 clears a C4 hurdle, because
+      the match is on pitch class, not absolute frequency.
+    </footer>
+  </section>
 
 </div>
 
@@ -2071,6 +2329,19 @@
     themeToggle.textContent = "theme: " + themeState;
   });
 
+  // ---------- tab integration ----------
+  // The canvas has zero client width while its panel is hidden, so re-measure
+  // on the way back in. Leaving the sim audible under the game tab would also
+  // feed the visualizer's own notes into the game's microphone, so pause it.
+  window.addEventListener("musicviz:tabshown", function (e) {
+    if (e.detail === "viz") {
+      resizeCanvas();
+    } else if (state.playing) {
+      state.playing = false;
+      playPauseBtn.textContent = "Play";
+    }
+  });
+
   // ---------- init ----------
   updateScaleUIVisibility();
   updateDrumTempoUI();
@@ -2079,6 +2350,870 @@
   rebuildBalls();
   resizeCanvas();
   requestAnimationFrame(frame);
+})();
+</script>
+
+<script>
+/* ============================================================
+   Pitch Runner — sing the note on the hurdle to make him jump.
+   Fully self-contained: its own AudioContext, its own rAF loop,
+   its own canvas. It talks to the visualizer only through the
+   "musicviz:tabshown" event.
+   ============================================================ */
+(function () {
+  "use strict";
+
+  // ---------- the scale ----------
+  // Equal temperament, A4 = 440 Hz, so Do lands on middle C at 261.63 Hz
+  // and the octave closes on Ti at 493.88 Hz.
+  var SCALE = [
+    { solfege: "Do", name: "C4", freq: 261.63, hue: 8 },
+    { solfege: "Re", name: "D4", freq: 293.66, hue: 40 },
+    { solfege: "Mi", name: "E4", freq: 329.63, hue: 68 },
+    { solfege: "Fa", name: "F4", freq: 349.23, hue: 120 },
+    { solfege: "Sol", name: "G4", freq: 392.00, hue: 175 },
+    { solfege: "La", name: "A4", freq: 440.00, hue: 215 },
+    { solfege: "Ti", name: "B4", freq: 493.88, hue: 280 }
+  ];
+  var POOLS = {
+    ladder: [0, 1, 2, 3, 4, 5, 6],
+    random: [0, 1, 2, 3, 4, 5, 6],
+    pentatonic: [0, 1, 2, 4, 5],
+    triad: [0, 2, 4]
+  };
+
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+  var els = {
+    micBtn: document.getElementById("micBtn"),
+    micStatus: document.getElementById("micStatus"),
+    tunerNote: document.getElementById("tunerNote"),
+    tunerHz: document.getElementById("tunerHz"),
+    needle: document.getElementById("centsNeedle"),
+    centsVal: document.getElementById("centsVal"),
+    mode: document.getElementById("gameModeSelect"),
+    difficulty: document.getElementById("difficultySelect"),
+    octaveForgive: document.getElementById("octaveForgiveToggle"),
+    holdSlider: document.getElementById("holdSlider"),
+    holdVal: document.getElementById("holdVal"),
+    refTone: document.getElementById("refToneToggle"),
+    keyboard: document.getElementById("keyboardToggle"),
+    legend: document.getElementById("gameLegend"),
+    startBtn: document.getElementById("gameStartBtn"),
+    resetBtn: document.getElementById("gameResetBtn"),
+    score: document.getElementById("gameScore"),
+    streak: document.getElementById("gameStreak"),
+    lives: document.getElementById("gameLives"),
+    level: document.getElementById("gameLevel")
+  };
+
+  // ---------- settings ----------
+  var opts = {
+    pool: "ladder",
+    toleranceCents: 50,
+    octaveForgiving: true,
+    holdSeconds: 0.35,
+    refTone: false,
+    keyboardMode: false
+  };
+
+  // ---------- audio: microphone + reference tone ----------
+  var audio = {
+    ctx: null,
+    analyser: null,
+    stream: null,
+    source: null,
+    buf: null,
+    ready: false,
+    gateUntil: 0   // while a reference tone sounds, ignore the mic so the
+  };               // game cannot hear itself through the speakers and cheat
+
+  function ensureCtx() {
+    if (!audio.ctx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      audio.ctx = new AC();
+    }
+    if (audio.ctx.state === "suspended") audio.ctx.resume();
+    return audio.ctx;
+  }
+
+  function setStatus(text, cls) {
+    els.micStatus.textContent = text;
+    els.micStatus.className = "mic-status" + (cls ? " " + cls : "");
+  }
+
+  function enableMic() {
+    // Microphone access requires a secure context. Opening the page over plain
+    // http on a LAN address (phone → dev box) leaves mediaDevices undefined,
+    // which looks like a broken game unless we name the real cause.
+    if (!window.isSecureContext) {
+      setStatus("Microphone needs a secure page. This is " + window.location.protocol +
+        "//" + window.location.host + " — browsers only allow mic access over https:// or on localhost. " +
+        "Use keyboard mode (keys 1–7) here, or open the https:// copy of this page.", "err");
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatus("This browser will not give a page microphone access. Turn on keyboard mode (keys 1–7) to play without a mic.", "err");
+      return;
+    }
+    els.micBtn.disabled = true;
+    els.micBtn.textContent = "Requesting…";
+    navigator.mediaDevices.getUserMedia({
+      audio: {
+        // All three defeat pitch tracking if left on: they are tuned for
+        // speech and will gate or duck a sustained hum.
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+      }
+    }).then(function (stream) {
+      var ac = ensureCtx();
+      audio.stream = stream;
+      audio.source = ac.createMediaStreamSource(stream);
+      audio.analyser = ac.createAnalyser();
+      audio.analyser.fftSize = 2048;
+      audio.buf = new Float32Array(audio.analyser.fftSize);
+      audio.source.connect(audio.analyser);   // deliberately not to destination
+      audio.ready = true;
+      els.micBtn.disabled = false;
+      els.micBtn.textContent = "Microphone off";
+      setStatus("Listening. Sing, hum, or whistle the note shown on the hurdle.", "ok");
+    }).catch(function (err) {
+      audio.ready = false;
+      els.micBtn.disabled = false;
+      els.micBtn.textContent = "Enable microphone";
+      setStatus("Microphone blocked (" + (err && err.name ? err.name : "error") +
+        "). Allow it in the address bar, or switch on keyboard mode to play with keys 1–7.", "err");
+    });
+  }
+
+  function disableMic() {
+    if (audio.stream) {
+      audio.stream.getTracks().forEach(function (t) { t.stop(); });
+    }
+    if (audio.source) { try { audio.source.disconnect(); } catch (e) {} }
+    audio.stream = null;
+    audio.source = null;
+    audio.analyser = null;
+    audio.ready = false;
+    els.micBtn.textContent = "Enable microphone";
+    setStatus("Microphone off.", null);
+  }
+
+  els.micBtn.addEventListener("click", function () {
+    if (audio.ready) disableMic(); else enableMic();
+  });
+
+  // Short soft tone: reference pitch, and the voice for keyboard mode.
+  function playTone(freq, seconds, peak) {
+    var ac = ensureCtx();
+    var now = ac.currentTime;
+    var osc = ac.createOscillator();
+    var gain = ac.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(peak, now + 0.02);
+    gain.gain.setValueAtTime(peak, now + seconds - 0.06);
+    gain.gain.linearRampToValueAtTime(0, now + seconds);
+    osc.connect(gain);
+    gain.connect(ac.destination);
+    osc.start(now);
+    osc.stop(now + seconds + 0.02);
+    audio.gateUntil = Math.max(audio.gateUntil, performance.now() + seconds * 1000 + 140);
+  }
+
+  // ---------- pitch detection ----------
+  // Normalized square difference (McLeod). Plain autocorrelation picks the
+  // wrong octave on voices constantly; NSDF plus "first peak above 90% of the
+  // best peak" is what keeps a hummed Do from reading as the octave below.
+  var WIN = 1024;
+  var nsdf = new Float32Array(2048);
+
+  function detectPitch(buf, sampleRate) {
+    var i, rms = 0;
+    for (i = 0; i < WIN; i++) { var v = buf[i]; rms += v * v; }
+    rms = Math.sqrt(rms / WIN);
+    if (rms < 0.012) return null;   // silence / room noise
+
+    var tauMin = Math.max(2, Math.floor(sampleRate / 1200));
+    var tauMax = Math.min(buf.length - WIN, Math.floor(sampleRate / 65));
+    if (tauMax <= tauMin + 2) return null;
+
+    var maxVal = 0, tau;
+    for (tau = tauMin; tau <= tauMax; tau++) {
+      var ac = 0, m = 0;
+      for (i = 0; i < WIN; i++) {
+        var a = buf[i], b = buf[i + tau];
+        ac += a * b;
+        m += a * a + b * b;
+      }
+      var val = m > 0 ? (2 * ac) / m : 0;
+      nsdf[tau] = val;
+      if (val > maxVal) maxVal = val;
+    }
+    if (maxVal < 0.5) return null;  // no periodic content worth trusting
+
+    var thresh = maxVal * 0.9;
+    var best = -1;
+    for (tau = tauMin + 1; tau < tauMax; tau++) {
+      if (nsdf[tau] > thresh && nsdf[tau] >= nsdf[tau - 1] && nsdf[tau] >= nsdf[tau + 1]) {
+        best = tau;
+        break;
+      }
+    }
+    if (best < 1) return null;
+
+    // Parabolic vertex through the three samples around the peak, so the
+    // resolution is not limited to whole samples (~6 cents at 300 Hz).
+    var y0 = nsdf[best - 1], y1 = nsdf[best], y2 = nsdf[best + 1];
+    var denom = 2 * (2 * y1 - y0 - y2);
+    var shift = denom !== 0 ? (y2 - y0) / denom : 0;
+    if (!isFinite(shift) || Math.abs(shift) > 1) shift = 0;
+
+    var freq = sampleRate / (best + shift);
+    if (freq < 60 || freq > 1300) return null;
+    return { freq: freq, clarity: maxVal, rms: rms };
+  }
+
+  function centsOff(freq, target, fold) {
+    var c = 1200 * Math.log(freq / target) / Math.LN2;
+    if (fold) c -= 1200 * Math.round(c / 1200);
+    return c;
+  }
+
+  function nearestScaleIndex(freq) {
+    var bestIdx = 0, bestAbs = Infinity;
+    for (var i = 0; i < SCALE.length; i++) {
+      var c = Math.abs(centsOff(freq, SCALE[i].freq, true));
+      if (c < bestAbs) { bestAbs = c; bestIdx = i; }
+    }
+    return { index: bestIdx, cents: bestAbs };
+  }
+
+  // ---------- keyboard fallback ----------
+  var keysHeld = {};
+  var KEY_TO_DEGREE = { "1": 0, "2": 1, "3": 2, "4": 3, "5": 4, "6": 5, "7": 6 };
+
+  document.addEventListener("keydown", function (e) {
+    if (!opts.keyboardMode || document.getElementById("panelGame").hidden) return;
+    var deg = KEY_TO_DEGREE[e.key];
+    if (deg === undefined || keysHeld[deg]) return;
+    keysHeld[deg] = true;
+    playTone(SCALE[deg].freq, 0.25, 0.12);
+    e.preventDefault();
+  });
+  document.addEventListener("keyup", function (e) {
+    var deg = KEY_TO_DEGREE[e.key];
+    if (deg !== undefined) keysHeld[deg] = false;
+  });
+  window.addEventListener("blur", function () { keysHeld = {}; });
+
+  // ---------- game state ----------
+  var G = null;
+  function newGame() {
+    return {
+      started: false,
+      running: false,
+      over: false,
+      score: 0,
+      streak: 0,
+      lives: 3,
+      level: 1,
+      cleared: 0,
+      distance: 0,
+      speed: 190,
+      hurdles: [],
+      nextSpawnAt: 0,      // in world distance units
+      runnerY: 0,          // px above ground
+      runnerVY: 0,
+      airborne: false,
+      runPhase: 0,
+      stumble: 0,
+      shake: 0,
+      banner: "Sing the note on the hurdle to jump it.",
+      bannerUntil: Infinity
+    };
+  }
+  G = newGame();
+
+  var GRAVITY = 2000;      // px/s²
+  var JUMP_V = 620;        // px/s  → 0.62 s of air, ~96 px of clearance
+  var AIRTIME = (2 * JUMP_V) / GRAVITY;
+
+  function speedForLevel(lvl) { return Math.min(340, 190 + (lvl - 1) * 22); }
+  function activationLead(g) { return g.speed * 2.2; }   // px of "sing zone"
+
+  function spawnHurdle(g, worldX) {
+    var pool = POOLS[opts.pool] || POOLS.ladder;
+    var deg;
+    if (opts.pool === "ladder") {
+      g.spawnCount = (g.spawnCount || 0);
+      deg = pool[g.spawnCount % pool.length];
+      g.spawnCount++;
+    } else {
+      deg = pool[Math.floor(Math.random() * pool.length)];
+      if (g.lastDeg === deg && pool.length > 1) {
+        deg = pool[(pool.indexOf(deg) + 1 + Math.floor(Math.random() * (pool.length - 1))) % pool.length];
+      }
+    }
+    g.lastDeg = deg;
+    g.hurdles.push({
+      x: worldX,
+      degree: deg,
+      charge: 0,
+      armed: false,
+      active: false,
+      resolved: null,   // "cleared" | "hit"
+      knocked: 0
+    });
+  }
+
+  function startRun() {
+    if (!audio.ready && !opts.keyboardMode) {
+      // Nothing to detect with — say so instead of starting a run that
+      // cannot be won.
+      setStatus("Enable the microphone first, or switch on keyboard mode to play with keys 1–7.", "err");
+      return;
+    }
+    ensureCtx();
+    G = newGame();
+    G.started = true;
+    G.running = true;
+    G.speed = speedForLevel(1);
+    G.banner = "Go!";
+    G.bannerUntil = performance.now() + 900;
+    spawnHurdle(G, canvas.clientWidth + 120);
+    G.nextSpawnAt = 0;
+    els.startBtn.textContent = "Pause";
+    syncStats();
+  }
+
+  els.startBtn.addEventListener("click", function () {
+    if (G.over || !G.started) {
+      startRun();
+    } else {
+      G.running = !G.running;
+      els.startBtn.textContent = G.running ? "Pause" : "Resume";
+      if (G.running) ensureCtx();
+    }
+  });
+  els.resetBtn.addEventListener("click", function () {
+    G = newGame();
+    els.startBtn.textContent = "Start run";
+    syncStats();
+  });
+
+  function syncStats() {
+    els.score.textContent = String(G.score);
+    els.streak.textContent = String(G.streak);
+    els.lives.textContent = G.lives > 0 ? new Array(G.lives + 1).join("♥") : "—";
+    els.level.textContent = String(G.level);
+  }
+
+  // ---------- options wiring ----------
+  els.mode.addEventListener("change", function () { opts.pool = els.mode.value; });
+  els.difficulty.addEventListener("change", function () { opts.toleranceCents = parseFloat(els.difficulty.value); });
+  els.octaveForgive.addEventListener("change", function () { opts.octaveForgiving = els.octaveForgive.checked; });
+  els.refTone.addEventListener("change", function () { opts.refTone = els.refTone.checked; });
+  els.keyboard.addEventListener("change", function () { opts.keyboardMode = els.keyboard.checked; });
+  els.holdSlider.addEventListener("input", function () {
+    opts.holdSeconds = parseInt(els.holdSlider.value, 10) / 100;
+    els.holdVal.textContent = opts.holdSeconds.toFixed(2) + " s";
+  });
+
+  // legend
+  var legendCells = SCALE.map(function (n, i) {
+    var d = document.createElement("div");
+    d.innerHTML = "<b>" + n.solfege + "</b>" + n.name + "<br>" + n.freq.toFixed(0) + "Hz";
+    d.title = n.name + " = " + n.freq.toFixed(2) + " Hz  (key " + (i + 1) + ")";
+    els.legend.appendChild(d);
+    return d;
+  });
+
+  // ---------- per-frame pitch read ----------
+  var lastDetect = 0;
+  var current = { freq: 0, cents: 0, degree: -1, live: false, clarity: 0 };
+
+  function readPitch(nowMs) {
+    if (opts.keyboardMode) {
+      for (var d = 0; d < SCALE.length; d++) {
+        if (keysHeld[d]) {
+          current.freq = SCALE[d].freq;
+          current.cents = 0;
+          current.degree = d;
+          current.clarity = 1;
+          current.live = true;
+          return;
+        }
+      }
+      current.live = false;
+      current.degree = -1;
+      return;
+    }
+    if (!audio.ready || !audio.analyser) { current.live = false; current.degree = -1; return; }
+    if (nowMs < audio.gateUntil) { current.live = false; current.degree = -1; return; }
+    if (nowMs - lastDetect < 28) return;   // ~35 Hz is plenty and keeps the
+    lastDetect = nowMs;                    // O(WIN × lags) scan off the frame budget
+
+    audio.analyser.getFloatTimeDomainData(audio.buf);
+    var res = detectPitch(audio.buf, audio.ctx.sampleRate);
+    if (!res || res.clarity < 0.6) { current.live = false; current.degree = -1; return; }
+    var near = nearestScaleIndex(res.freq);
+    current.freq = res.freq;
+    current.degree = near.index;
+    current.cents = centsOff(res.freq, SCALE[near.index].freq, true);
+    current.clarity = res.clarity;
+    current.live = true;
+  }
+
+  function updateTunerUI() {
+    if (!current.live) {
+      els.tunerNote.textContent = "—";
+      els.tunerNote.className = "tuner-note";
+      els.tunerHz.textContent = opts.keyboardMode ? "hold keys 1–7" : (audio.ready ? "no signal" : "mic off");
+      els.needle.style.opacity = "0";
+      els.centsVal.textContent = "flat / sharp";
+      legendCells.forEach(function (c) { c.classList.remove("lit"); });
+      return;
+    }
+    var n = SCALE[current.degree];
+    els.tunerNote.textContent = n.solfege + " · " + n.name;
+    els.tunerNote.className = "tuner-note live";
+    els.tunerHz.textContent = current.freq.toFixed(1) + " Hz";
+    var clamped = Math.max(-50, Math.min(50, current.cents));
+    els.needle.style.opacity = "1";
+    els.needle.style.left = (50 + clamped) + "%";
+    els.needle.classList.toggle("in-tune", Math.abs(current.cents) <= opts.toleranceCents);
+    els.centsVal.textContent = (current.cents >= 0 ? "+" : "") + current.cents.toFixed(0) + "¢";
+    legendCells.forEach(function (c, i) { c.classList.toggle("lit", i === current.degree); });
+  }
+
+  // ---------- simulation ----------
+  function update(dt, nowMs) {
+    var w = canvas.clientWidth;
+    var runnerX = w * 0.22;
+
+    if (G.shake > 0) G.shake = Math.max(0, G.shake - dt * 3);
+    if (G.stumble > 0) G.stumble = Math.max(0, G.stumble - dt);
+
+    if (!G.running || G.over) return;
+
+    G.distance += G.speed * dt;
+    G.runPhase += dt * (G.airborne ? 2 : G.speed / 26);
+
+    // move hurdles
+    var i;
+    for (i = 0; i < G.hurdles.length; i++) G.hurdles[i].x -= G.speed * dt;
+
+    // spawn: keep roughly 3 seconds of runway between hurdles
+    var lastX = -Infinity;
+    for (i = 0; i < G.hurdles.length; i++) lastX = Math.max(lastX, G.hurdles[i].x);
+    if (lastX < w - G.speed * 3.0) spawnHurdle(G, w + 80);
+
+    // the active hurdle is the nearest unresolved one ahead of the runner
+    var active = null;
+    for (i = 0; i < G.hurdles.length; i++) {
+      var hd = G.hurdles[i];
+      if (!hd.resolved && hd.x > runnerX - 10) {
+        if (!active || hd.x < active.x) active = hd;
+      }
+    }
+
+    for (i = 0; i < G.hurdles.length; i++) G.hurdles[i].active = false;
+
+    if (active && active.x - runnerX <= activationLead(G)) {
+      active.active = true;
+      if (!active.announced) {
+        active.announced = true;
+        if (opts.refTone) playTone(SCALE[active.degree].freq, 0.45, 0.10);
+      }
+      if (!active.armed) {
+        var inTune = current.live &&
+          current.degree === active.degree &&
+          Math.abs(current.cents) <= opts.toleranceCents &&
+          (opts.octaveForgiving || Math.abs(centsOff(current.freq, SCALE[active.degree].freq, false)) <= opts.toleranceCents);
+        if (inTune) {
+          active.charge += dt / Math.max(0.05, opts.holdSeconds);
+          if (active.charge >= 1) { active.charge = 1; active.armed = true; }
+        } else {
+          // Decay slowly: a half-second wobble mid-note should not wipe out
+          // the whole hold.
+          active.charge = Math.max(0, active.charge - dt * 0.55);
+        }
+      }
+    }
+
+    // jump timing: fire so the apex sits over the bar
+    if (active && active.armed && !active.jumped && !G.airborne) {
+      var lead = G.speed * (AIRTIME / 2);
+      if (active.x - runnerX <= lead) {
+        active.jumped = true;
+        G.runnerVY = -JUMP_V;
+        G.airborne = true;
+      }
+    }
+
+    // runner physics. runnerY is height ABOVE the ground and runnerVY points
+    // the screen way (negative = rising), so height integrates -vy.
+    if (G.airborne) {
+      G.runnerVY += GRAVITY * dt;
+      G.runnerY -= G.runnerVY * dt;
+      if (G.runnerY <= 0) { G.runnerY = 0; G.runnerVY = 0; G.airborne = false; }
+    }
+
+    // resolve hurdles as they reach the runner
+    for (i = 0; i < G.hurdles.length; i++) {
+      var h = G.hurdles[i];
+      if (h.resolved || h.x > runnerX) continue;
+      if (h.armed) {
+        h.resolved = "cleared";
+        G.streak++;
+        G.cleared++;
+        G.score += 100 + (G.streak - 1) * 10;
+        G.banner = SCALE[h.degree].solfege + "! +" + (100 + (G.streak - 1) * 10);
+        G.bannerUntil = nowMs + 900;
+        if (G.cleared % 5 === 0) {
+          G.level++;
+          G.speed = speedForLevel(G.level);
+          G.banner = "Level " + G.level + " — faster";
+          G.bannerUntil = nowMs + 1200;
+        }
+      } else {
+        h.resolved = "hit";
+        h.knocked = 1;
+        G.streak = 0;
+        G.lives--;
+        G.stumble = 0.6;
+        G.shake = 1;
+        G.banner = "Missed " + SCALE[h.degree].solfege + " (" + SCALE[h.degree].freq.toFixed(0) + " Hz)";
+        G.bannerUntil = nowMs + 1200;
+        if (G.lives <= 0) {
+          G.over = true;
+          G.running = false;
+          els.startBtn.textContent = "Start run";
+          G.banner = "Run over — " + G.score + " points, " + G.cleared + " hurdles";
+          G.bannerUntil = Infinity;
+        }
+      }
+      syncStats();
+    }
+
+    // drop hurdles that are well off-screen
+    G.hurdles = G.hurdles.filter(function (hh) { return hh.x > -160; });
+  }
+
+  // ---------- rendering ----------
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function drawRunner(x, groundY, height, phase, airborne, stumble) {
+    var col = cssVar("--text");
+    var accent = cssVar("--accent-strong");
+    var y = groundY - height;             // hip height above ground
+    var lean = stumble > 0 ? 0.45 : (airborne ? 0.15 : 0.1);
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(lean * (stumble > 0 ? 1 : 0.2));
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 3.5;
+    ctx.lineCap = "round";
+
+    // head
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.arc(0, -30, 9, 0, Math.PI * 2);
+    ctx.fill();
+
+    // torso
+    ctx.beginPath();
+    ctx.moveTo(0, -21);
+    ctx.lineTo(0, 2);
+    ctx.stroke();
+
+    var swing = Math.sin(phase);
+    var swing2 = Math.sin(phase + Math.PI);
+
+    // arms
+    ctx.beginPath();
+    if (airborne) {
+      ctx.moveTo(0, -14); ctx.lineTo(-14, -26);
+      ctx.moveTo(0, -14); ctx.lineTo(14, -24);
+    } else {
+      ctx.moveTo(0, -14); ctx.lineTo(swing * 12, -4);
+      ctx.moveTo(0, -14); ctx.lineTo(swing2 * 12, -4);
+    }
+    ctx.stroke();
+
+    // legs
+    ctx.beginPath();
+    if (airborne) {
+      ctx.moveTo(0, 2); ctx.lineTo(16, 6);   ctx.lineTo(24, 0);
+      ctx.moveTo(0, 2); ctx.lineTo(-10, 12); ctx.lineTo(-18, 6);
+    } else if (stumble > 0) {
+      ctx.moveTo(0, 2); ctx.lineTo(14, 16); ctx.lineTo(20, 26);
+      ctx.moveTo(0, 2); ctx.lineTo(-6, 18); ctx.lineTo(-16, 24);
+    } else {
+      ctx.moveTo(0, 2); ctx.lineTo(swing2 * 11, 14); ctx.lineTo(swing2 * 15, 28);
+      ctx.moveTo(0, 2); ctx.lineTo(swing * 11, 14);  ctx.lineTo(swing * 15, 28);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawHurdle(h, groundY) {
+    var note = SCALE[h.degree];
+    var barH = 58;
+    var col = "hsl(" + note.hue + " 62% 58%)";
+    var faint = cssVar("--text-faint");
+
+    ctx.save();
+    ctx.translate(h.x, groundY);
+    if (h.knocked > 0) ctx.rotate(-0.9);     // knocked flat after a miss
+
+    ctx.strokeStyle = h.resolved === "hit" ? faint : col;
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-11, 0); ctx.lineTo(-11, -barH);
+    ctx.moveTo(11, 0);  ctx.lineTo(11, -barH);
+    ctx.moveTo(-15, -barH); ctx.lineTo(15, -barH);
+    ctx.moveTo(-13, -barH * 0.55); ctx.lineTo(13, -barH * 0.55);
+    ctx.stroke();
+    ctx.restore();
+
+    if (h.resolved === "hit") return;
+
+    // flag above the bar: solfège + note name + frequency
+    var fx = h.x, fy = groundY - barH - 14;
+    var label = note.solfege;
+    ctx.font = "700 20px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    var wLabel = Math.max(ctx.measureText(label).width, 58) + 18;
+    var boxH = 46;
+
+    ctx.fillStyle = h.active ? "hsl(" + note.hue + " 62% 58% / 0.22)" : cssVar("--panel-2");
+    ctx.strokeStyle = h.active ? "hsl(" + note.hue + " 62% 58%)" : cssVar("--border");
+    ctx.lineWidth = h.active ? 2 : 1;
+    roundRect(fx - wLabel / 2, fy - boxH, wLabel, boxH, 7);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "hsl(" + note.hue + " 62% " + (h.active ? "64%" : "52%") + ")";
+    ctx.fillText(label, fx, fy - boxH + 22);
+    ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    ctx.fillStyle = cssVar("--text-muted");
+    ctx.fillText(note.name + " · " + note.freq.toFixed(0) + " Hz", fx, fy - boxH + 37);
+
+    // charge meter — fills while the singer holds the right pitch
+    if (h.active || h.charge > 0) {
+      var mw = wLabel, mx = fx - mw / 2, my = fy + 4;
+      ctx.fillStyle = cssVar("--border");
+      roundRect(mx, my, mw, 6, 3); ctx.fill();
+      ctx.fillStyle = h.armed ? cssVar("--accent2-strong") : "hsl(" + note.hue + " 62% 58%)";
+      roundRect(mx, my, mw * Math.min(1, h.charge), 6, 3); ctx.fill();
+      if (h.armed) {
+        ctx.font = "700 10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+        ctx.fillStyle = cssVar("--accent2-strong");
+        ctx.fillText("LOCKED", fx, my + 19);
+      }
+    }
+    ctx.textAlign = "left";
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function render(nowMs) {
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+
+    var groundY = h - 66;
+    var runnerX = w * 0.22;
+
+    ctx.save();
+    if (G.shake > 0) {
+      ctx.translate((Math.random() - 0.5) * 8 * G.shake, (Math.random() - 0.5) * 6 * G.shake);
+    }
+
+    // ground
+    ctx.strokeStyle = cssVar("--canvas-ground");
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, groundY); ctx.lineTo(w, groundY);
+    ctx.stroke();
+
+    // scrolling ticks so the motion reads even between hurdles
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.6;
+    var off = G.distance % 40;
+    ctx.beginPath();
+    for (var tx = -off; tx < w; tx += 40) {
+      ctx.moveTo(tx, groundY + 4);
+      ctx.lineTo(tx + 12, groundY + 4);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // sing-zone marker
+    var zoneX = runnerX + activationLead(G);
+    if (zoneX < w) {
+      ctx.setLineDash([4, 6]);
+      ctx.strokeStyle = cssVar("--border");
+      ctx.beginPath();
+      ctx.moveTo(zoneX, groundY - 150); ctx.lineTo(zoneX, groundY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+      ctx.fillStyle = cssVar("--text-faint");
+      ctx.textAlign = "center";
+      ctx.fillText("sing zone", zoneX, groundY - 156);
+      ctx.textAlign = "left";
+    }
+
+    G.hurdles.forEach(function (hd) { drawHurdle(hd, groundY); });
+    drawRunner(runnerX, groundY, G.runnerY + 30, G.runPhase, G.airborne, G.stumble);
+
+    ctx.restore();
+
+    // HUD: what to sing right now, and what is being heard
+    var active = null;
+    G.hurdles.forEach(function (hd) { if (hd.active) active = hd; });
+
+    ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    ctx.fillStyle = cssVar("--text-faint");
+    if (active) {
+      var n = SCALE[active.degree];
+      ctx.fillText("SING", 14, 22);
+      ctx.font = "700 22px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+      ctx.fillStyle = "hsl(" + n.hue + " 62% 58%)";
+      ctx.fillText(n.solfege + "  " + n.freq.toFixed(2) + " Hz", 14, 46);
+    } else {
+      ctx.fillText(G.running ? "…" : "", 14, 22);
+    }
+
+    ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    ctx.textAlign = "right";
+    ctx.fillStyle = current.live ? cssVar("--accent2-strong") : cssVar("--text-faint");
+    ctx.fillText(
+      current.live
+        ? "hearing " + SCALE[current.degree].solfege + " " + current.freq.toFixed(1) + " Hz  " +
+          (current.cents >= 0 ? "+" : "") + current.cents.toFixed(0) + "¢"
+        : (opts.keyboardMode ? "keyboard mode — hold 1–7" : (audio.ready ? "listening…" : "microphone off")),
+      w - 14, 22
+    );
+    ctx.textAlign = "left";
+
+    // banner / start & game-over overlay
+    var showBanner = nowMs < G.bannerUntil;
+    if (!G.running && !G.over) {
+      overlay(w, h, G.cleared > 0 ? "Paused" : "Pitch Runner",
+        G.cleared > 0 ? "Press Resume." :
+        "Enable the mic (or keyboard mode), press Start, then sing each hurdle's note to jump it.");
+    } else if (G.over) {
+      overlay(w, h, "Run over", G.score + " points · " + G.cleared + " hurdles cleared · press Start to run again");
+    } else if (showBanner) {
+      ctx.textAlign = "center";
+      ctx.font = "700 15px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+      ctx.fillStyle = cssVar("--text-muted");
+      ctx.fillText(G.banner, w / 2, 30);
+      ctx.textAlign = "left";
+    }
+  }
+
+  function overlay(w, h, title, sub) {
+    ctx.fillStyle = cssVar("--panel");
+    ctx.globalAlpha = 0.82;
+    ctx.fillRect(0, h / 2 - 52, w, 104);
+    ctx.globalAlpha = 1;
+    ctx.textAlign = "center";
+    ctx.font = "700 22px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    ctx.fillStyle = cssVar("--text");
+    ctx.fillText(title, w / 2, h / 2 - 8);
+    ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    ctx.fillStyle = cssVar("--text-muted");
+    ctx.fillText(sub, w / 2, h / 2 + 18);
+    ctx.textAlign = "left";
+  }
+
+  // ---------- canvas sizing + loop ----------
+  function resize() {
+    var cssWidth = canvas.clientWidth;
+    if (!cssWidth) return;             // panel hidden; re-measured on tab show
+    var cssHeight = Math.round(Math.min(460, Math.max(280, cssWidth * 0.62)));
+    canvas.style.height = cssHeight + "px";
+    canvas.width = Math.round(cssWidth * dpr);
+    canvas.height = Math.round(cssHeight * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", resize);
+
+  var lastTs = null;
+  function loop(ts) {
+    requestAnimationFrame(loop);
+    if (document.getElementById("panelGame").hidden) { lastTs = null; return; }
+    if (lastTs === null) lastTs = ts;
+    var dt = Math.min(0.05, (ts - lastTs) / 1000);
+    lastTs = ts;
+    readPitch(ts);
+    updateTunerUI();
+    update(dt, ts);
+    render(ts);
+  }
+
+  // ---------- tabs ----------
+  var panels = {
+    viz: document.getElementById("panelViz"),
+    game: document.getElementById("panelGame")
+  };
+  var tabBtns = {
+    viz: document.getElementById("tabBtnViz"),
+    game: document.getElementById("tabBtnGame")
+  };
+
+  function showTab(which) {
+    Object.keys(panels).forEach(function (k) {
+      panels[k].hidden = k !== which;
+      tabBtns[k].setAttribute("aria-selected", String(k === which));
+    });
+    if (which === "game") {
+      resize();
+    } else {
+      // Do not hold the microphone open on a tab the user has left.
+      if (audio.ready) disableMic();
+      if (G.running) { G.running = false; els.startBtn.textContent = "Resume"; }
+    }
+    window.dispatchEvent(new CustomEvent("musicviz:tabshown", { detail: which }));
+  }
+
+  tabBtns.viz.addEventListener("click", function () { showTab("viz"); });
+  tabBtns.game.addEventListener("click", function () { showTab("game"); });
+
+  // deep link: ?tab=game
+  if (new URLSearchParams(window.location.search).get("tab") === "game") {
+    showTab("game");
+  }
+
+  // ---------- init ----------
+  opts.pool = els.mode.value;
+  opts.toleranceCents = parseFloat(els.difficulty.value);
+  opts.holdSeconds = parseInt(els.holdSlider.value, 10) / 100;
+  els.holdVal.textContent = opts.holdSeconds.toFixed(2) + " s";
+  syncStats();
+  resize();
+  requestAnimationFrame(loop);
 })();
 </script>
 </body>
